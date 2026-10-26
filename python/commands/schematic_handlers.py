@@ -345,6 +345,7 @@ class SchematicHandlersMixin:
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
             delete_attached_labels = bool(params.get("deleteAttachedLabels", False))
+            purge_lib_symbols = bool(params.get("purgeUnusedLibSymbols", False))
             unit = params.get("unit")
 
             if not schematic_path:
@@ -480,6 +481,11 @@ class SchematicHandlersMixin:
                     result["labelCleanupWarning"] = label_cleanup_warning
                 else:
                     result.update(self._delete_dangling_labels_at(sch_file, target_pin_positions))
+
+            if purge_lib_symbols:
+                from commands.schematic_items import purge_unused_lib_symbols
+
+                result["purgedLibSymbols"] = purge_unused_lib_symbols(sch_file)
 
             return result
 
@@ -2795,6 +2801,202 @@ class SchematicHandlersMixin:
 
         except Exception as e:
             logger.error(f"Error deleting no-connect: {e}")
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_junction(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a junction dot at a position."""
+        logger.info("Adding junction to schematic")
+        try:
+            from commands.schematic_items import add_junction
+
+            sch_file, position, error = self._sheet_and_position(params)
+            if error:
+                return error
+            if not add_junction(sch_file, position):
+                return {
+                    "success": True,
+                    "added": False,
+                    "message": f"A junction is already at ({position[0]}, {position[1]})",
+                }
+            return {
+                "success": True,
+                "added": True,
+                "message": f"Added junction at ({position[0]}, {position[1]})",
+            }
+        except Exception as e:
+            logger.error(f"Error adding junction: {e}")
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_delete_schematic_junction(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove the junction dot at a position."""
+        logger.info("Deleting junction from schematic")
+        try:
+            from commands.schematic_items import delete_items_at
+
+            sch_file, position, error = self._sheet_and_position(params)
+            if error:
+                return error
+            removed = delete_items_at(sch_file, "junction", position)
+            if not removed:
+                return {
+                    "success": False,
+                    "message": f"No junction at ({position[0]}, {position[1]})",
+                }
+            return {
+                "success": True,
+                "removed": removed,
+                "message": f"Removed {removed} junction(s) at ({position[0]}, {position[1]})",
+            }
+        except Exception as e:
+            logger.error(f"Error deleting junction: {e}")
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    @staticmethod
+    def _sheet_and_position(params: Dict[str, Any]):
+        """(schematic file, [x, y], None), or (None, None, error response)."""
+        schematic_path = params.get("schematicPath")
+        position = params.get("position")
+        if not schematic_path:
+            return None, None, {"success": False, "message": "schematicPath is required"}
+        if not position or len(position) != 2:
+            return None, None, {"success": False, "message": "position [x, y] is required"}
+        sch_file = Path(schematic_path)
+        if not sch_file.exists():
+            return (
+                None,
+                None,
+                {"success": False, "message": f"Schematic not found: {schematic_path}"},
+            )
+        return sch_file, position, None
+
+    def _handle_list_stale_junctions(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List junction dots that no longer join three or more wire ends/pins."""
+        logger.info("Listing stale junctions")
+        try:
+            from commands.schematic_items import stale_junctions
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            stale = stale_junctions(sch_file)
+            return {
+                "success": True,
+                "stale_junctions": stale,
+                "count": len(stale),
+                "message": f"Found {len(stale)} stale junction(s)",
+            }
+        except Exception as e:
+            logger.error(f"Error listing stale junctions: {e}")
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_set_schematic_component_flags(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set dnp / in_bom / on_board / exclude_from_sim on every unit of a placed symbol."""
+        logger.info("Setting schematic component flags")
+        try:
+            from commands.schematic_items import set_component_flags
+
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+            if not schematic_path or not reference:
+                return {"success": False, "message": "schematicPath and reference are required"}
+            names = {
+                "dnp": "dnp",
+                "inBom": "in_bom",
+                "onBoard": "on_board",
+                "excludeFromSim": "exclude_from_sim",
+            }
+            flags = {
+                head: bool(params[k]) for k, head in names.items() if params.get(k) is not None
+            }
+            if not flags:
+                return {
+                    "success": False,
+                    "message": "Give at least one of dnp, inBom, onBoard, excludeFromSim",
+                }
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            units = set_component_flags(sch_file, reference, flags)
+            summary = ", ".join(f"{k}={'yes' if v else 'no'}" for k, v in flags.items())
+            return {
+                "success": True,
+                "reference": reference,
+                "units": units,
+                "flags": flags,
+                "message": f"Set {summary} on {units} unit(s) of {reference}",
+            }
+        except ValueError as e:
+            return {"success": False, "message": str(e)}
+        except Exception as e:
+            logger.error(f"Error setting component flags: {e}")
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_set_title_block(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set title block fields of one sheet; omitted fields are kept, "" clears one."""
+        logger.info("Setting schematic title block")
+        try:
+            from commands.schematic_items import set_title_block
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            fields = {
+                k: str(params[k])
+                for k in ("title", "date", "rev", "company")
+                if params.get(k) is not None
+            }
+            comments = {
+                n: str(params[f"comment{n}"])
+                for n in range(1, 10)
+                if params.get(f"comment{n}") is not None
+            }
+            if not fields and not comments:
+                return {"success": False, "message": "Nothing to change"}
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            title_block = set_title_block(sch_file, fields, comments)
+            return {
+                "success": True,
+                "titleBlock": title_block,
+                "message": f"Updated title block of {sch_file.name}",
+            }
+        except Exception as e:
+            logger.error(f"Error setting title block: {e}")
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_purge_unused_lib_symbols(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Drop lib_symbols entries no placed symbol uses."""
+        logger.info("Purging unused lib_symbols")
+        try:
+            from commands.schematic_items import purge_unused_lib_symbols
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            purged = purge_unused_lib_symbols(sch_file)
+            return {
+                "success": True,
+                "purged": purged,
+                "count": len(purged),
+                "message": f"Removed {len(purged)} unused lib_symbols entry(ies)",
+            }
+        except Exception as e:
+            logger.error(f"Error purging lib_symbols: {e}")
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 

@@ -12,7 +12,7 @@ These tools enable a complete schematic design workflow, from creating projects 
 
 **Shared error shape — `schematic_load_failed`:** every kicad-skip-based schematic tool returns a structured error when the schematic cannot be parsed (instead of empty/partial results): `{"success": false, "error": "schematic_load_failed", "flatSymbols": ["LIB:PART", ...], "message": "...", "errorDetails": "..."}`. `flatSymbols` names embedded vendor symbols with no sub-units (the SnapEDA/SamacSys pattern that crashes the parser); see KNOWN_ISSUES.md for the repair procedure.
 
-## Component Operations (10 tools)
+## Component Operations (11 tools)
 
 ### add_schematic_component
 
@@ -31,13 +31,14 @@ Add a component to the schematic. Symbol format is 'Library:SymbolName' (e.g., '
 
 ### delete_schematic_component
 
-Remove a placed symbol from a KiCAD schematic (.kicad_sch). This removes the symbol instance (the placed component) from the schematic. It does NOT remove the symbol definition from lib_symbols. Note: This tool operates on schematic files (.kicad_sch). To remove a footprint from a PCB, use delete_component instead.
+Remove a placed symbol from a KiCAD schematic (.kicad_sch). This removes the symbol instance (the placed component) from the schematic. Its symbol definition stays in lib_symbols unless `purgeUnusedLibSymbols` is set (or `purge_unused_lib_symbols` is run later). Note: This tool operates on schematic files (.kicad_sch). To remove a footprint from a PCB, use delete_component instead.
 
-| Parameter            | Type    | Required | Description                                                                                                    |
-| -------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------- |
-| schematicPath        | string  | Yes      | Path to the .kicad_sch file                                                                                    |
-| reference            | string  | Yes      | Reference designator of the component to remove (e.g. R1, U3)                                                  |
-| deleteAttachedLabels | boolean | No       | Also delete net labels sitting on the deleted component's pin positions (default false; see usage notes below) |
+| Parameter             | Type    | Required | Description                                                                                                                 |
+| --------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------- |
+| schematicPath         | string  | Yes      | Path to the .kicad_sch file                                                                                                 |
+| reference             | string  | Yes      | Reference designator of the component to remove (e.g. R1, U3)                                                               |
+| deleteAttachedLabels  | boolean | No       | Also delete net labels sitting on the deleted component's pin positions (default false; see usage notes below)              |
+| purgeUnusedLibSymbols | boolean | No       | Afterwards drop lib_symbols entries no placed symbol uses (default false); removed names are returned in `purgedLibSymbols` |
 
 **Usage Notes:** `deleteAttachedLabels` removes the labels that `batch_add_and_connect` placed on the component's pins, which otherwise remain as `label_dangling` ERC errors. A label is kept whenever it is still attached to something else: coincident with a remaining component's pin, coincident with a wire endpoint, or lying on a wire segment (0.5 mm tolerance). Deleted labels are reported in the response (`deleted_labels`, `deleted_label_count`). Labels joined to a pin only through a short wire are not chased — that is wire-graph cleanup, out of scope. Recommended when permanently removing a wired part; leave off (default) for delete-then-re-add-in-place workflows.
 
@@ -175,6 +176,21 @@ Rotate a placed symbol in the schematic.
 | angle         | number | Yes      | Rotation angle in degrees (0, 90, 180, 270) |
 | mirror        | enum   | No       | Optional mirror axis ("x" or "y")           |
 
+### set_schematic_component_flags
+
+Set the attributes eeschema shows as Do not populate, Exclude from BOM, Exclude
+from board and Exclude from simulation. Every unit of a multi-unit part is
+changed. Flags not given are left as they are.
+
+| Parameter      | Type    | Required | Description                                |
+| -------------- | ------- | -------- | ------------------------------------------ |
+| schematicPath  | string  | Yes      | Path to the .kicad_sch file                |
+| reference      | string  | Yes      | Reference designator (e.g. R1, U3)         |
+| dnp            | boolean | No       | Do not populate                            |
+| inBom          | boolean | No       | Include in the bill of materials           |
+| onBoard        | boolean | No       | Include on the board (exported to the PCB) |
+| excludeFromSim | boolean | No       | Exclude from simulation                    |
+
 ### annotate_schematic
 
 Assign reference designators to unannotated components (R? → R1, R2, ...). Must be called before tools that require known references.
@@ -183,7 +199,7 @@ Assign reference designators to unannotated components (R? → R1, R2, ...). Mus
 | ------------- | ------ | -------- | --------------------------- |
 | schematicPath | string | Yes      | Path to the .kicad_sch file |
 
-## Wiring and Connections (10 tools)
+## Wiring and Connections (12 tools)
 
 ### add_schematic_wire
 
@@ -239,6 +255,16 @@ duplicates go too.
 | componentRef  | string          | No       | Component reference (e.g., U1). Use with `pinNumber`.                |
 | pinNumber     | string / number | No       | Pin whose flag to remove. Use with `componentRef`.                   |
 | position      | array           | No       | `[x, y]` in mm. Required when `componentRef`/`pinNumber` are absent. |
+
+### add_schematic_junction
+
+Add a junction dot at `position` ([x, y] in mm). Nothing changes when a junction
+is already there (`added: false`).
+
+### delete_schematic_junction
+
+Remove the junction dot at `position` ([x, y] in mm, 0.5 mm tolerance), e.g. one
+reported by `list_stale_junctions`.
 
 ### add_schematic_net_label
 
@@ -471,6 +497,37 @@ List all free-form text annotations in the schematic. Optionally filter by a sub
 | vertical_justify | `"top"` \| `"center"` \| `"bottom"` |
 | uuid             | KiCad UUID of the element           |
 
+## Sheet Settings (2 tools)
+
+### set_title_block
+
+Set the title block of one .kicad_sch file. Each sheet of a hierarchy has its
+own title block, so call it once per sheet. Fields not given are left as they
+are; an empty string clears a field.
+
+| Parameter             | Type   | Required | Description                                 |
+| --------------------- | ------ | -------- | ------------------------------------------- |
+| schematicPath         | string | Yes      | Path to the .kicad_sch file                 |
+| title                 | string | No       | Title                                       |
+| date                  | string | No       | Date, free text (KiCad's own is YYYY-MM-DD) |
+| rev                   | string | No       | Revision                                    |
+| company               | string | No       | Company                                     |
+| comment1 ... comment9 | string | No       | Comments 1 to 9                             |
+
+**Response fields:** `titleBlock`, the title block after the change.
+
+### purge_unused_lib_symbols
+
+Drop entries from the schematic's `lib_symbols` cache that no placed symbol uses
+(by its `lib_name`, else its `lib_id`), as eeschema does when it saves.
+Leftovers appear after `delete_schematic_component` or swapping a part.
+
+| Parameter     | Type   | Required | Description                 |
+| ------------- | ------ | -------- | --------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch file |
+
+**Response fields:** `purged` (names removed), `count`.
+
 ## Schematic Creation and Export (6 tools)
 
 ### create_schematic
@@ -537,7 +594,7 @@ Export a netlist to a file in a standard EDA format using `kicad-cli`. Supports 
 
 **Usage Notes:** The schematic file must be saved before calling this tool. Use `Spice` format to produce a SPICE netlist for simulation or diff against a reference. The output file is created or overwritten at `outputPath`.
 
-## Validation and Synchronization (6 tools)
+## Validation and Synchronization (7 tools)
 
 ### list_floating_labels
 
@@ -565,6 +622,19 @@ Find wire segments with at least one dangling endpoint — not connected to a co
 | -------------- | ---------------------------------------------------------------------------- |
 | orphaned_wires | List of `{"start": {x,y}, "end": {x,y}, "dangling_ends": [{x,y}, ...]}` (mm) |
 | count          | Total number of orphaned wire segments                                       |
+
+### list_stale_junctions
+
+List junction dots that join fewer than three things, typically left behind
+after wires were deleted. Wire and bus ends and pins count one each; a wire
+running straight through the dot counts two. Remove them with
+`delete_schematic_junction`.
+
+| Parameter     | Type   | Required | Description                           |
+| ------------- | ------ | -------- | ------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch schematic file |
+
+**Response fields:** `stale_junctions` (`position`, `uuid`, `connections`), `count`.
 
 ### snap_to_grid
 
@@ -699,7 +769,7 @@ These live in other reference documents but belong to the same workflow:
 Paths are relative to the repository root.
 
 - **TypeScript (tool definitions):**
-  - `src/tools/schematic.ts` - the 49 core schematic tools
+  - `src/tools/schematic.ts` - the 55 core schematic tools
   - `src/tools/schematic-batch.ts` - bulk add, edit, connect
   - `src/tools/schematic-hierarchy.ts` - hierarchical sheets
   - `src/tools/schematic-layout.ts` - field placement and cosmetic lint
@@ -709,7 +779,7 @@ Paths are relative to the repository root.
   - `python/commands/component_schematic.py` - ComponentManager (add, delete, edit, list components with dynamic symbol loading)
   - `python/commands/connection_schematic.py` - ConnectionManager (wiring, net labels, passthrough, netlist generation)
   - `python/commands/wire_manager.py` - WireManager (low-level wire manipulation)
-  - `python/commands/schematic_items.py` - in-place edits of text notes and no-connects
+  - `python/commands/schematic_items.py` - in-place edits of text notes, no-connects, junctions, symbol flags, title block and lib_symbols cache
   - `python/commands/pin_locator.py` - PinLocator (pin location lookup and angle calculation)
   - `python/commands/dynamic_symbol_loader.py` - DynamicSymbolLoader (runtime symbol loading from KiCad libraries)
   - `python/commands/backannotate_footprints.py` - footprint back-annotation from board to schematic

@@ -19,6 +19,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `list_schematic_texts` reports `vertical_justify` as well.
 - **`delete_schematic_no_connect`** removes the no-connect flag at a position
   or on a `componentRef` + `pinNumber`.
+- **`set_schematic_component_flags`** sets DNP, in BOM, on board and exclude
+  from simulation on a placed symbol, on every unit of a multi-unit part.
+- **`set_title_block`** sets title, date, revision, company and comments 1-9
+  of one sheet. Fields not given are kept; an empty string clears one.
+- **`purge_unused_lib_symbols`** drops `lib_symbols` entries no placed symbol
+  uses, as eeschema does when it saves. `delete_schematic_component` takes
+  `purgeUnusedLibSymbols` to do the same after the delete.
+- **Junctions:** `add_schematic_junction` and `delete_schematic_junction`
+  work by position, and `list_stale_junctions` lists dots that join fewer than
+  three wire ends or pins. Wire, move and rotate edits still add and remove
+  junctions automatically. These tools are for dots that sync does not reach,
+  such as one left behind when a component is deleted or a wire is removed in
+  eeschema.
 
 These tools edit the file in place: the rest of the file is unchanged, and
 CRLF or LF line endings are kept as found.

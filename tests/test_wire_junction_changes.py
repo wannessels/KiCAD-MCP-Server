@@ -1,7 +1,7 @@
 """
 Tests for schematic wire and junction handling:
 - add_schematic_wire: waypoints param, pin snapping, polyline routing
-- Automatic junction sync (add_schematic_junction tool removed)
+- Automatic junction sync
 - Schema updates in tool_schemas.py
 - ConnectionManager orphaned method removal
 """
@@ -135,10 +135,12 @@ class TestHandlerDispatch:
         # Just verify the class has the handler method
         assert hasattr(KiCADInterface, "_handle_add_schematic_wire")
 
-    def test_add_schematic_junction_handler_removed(self) -> None:
+    def test_add_schematic_junction_handler_present(self) -> None:
+        # Junctions are synced automatically on wire edits; the explicit
+        # add/delete tools remain for dots that sync does not reach.
         from kicad_interface import KiCADInterface
 
-        assert not hasattr(KiCADInterface, "_handle_add_schematic_junction")
+        assert hasattr(KiCADInterface, "_handle_add_schematic_junction")
 
     def test_add_schematic_connection_not_present(self) -> None:
         from kicad_interface import KiCADInterface

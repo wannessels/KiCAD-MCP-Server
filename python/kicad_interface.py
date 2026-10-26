@@ -758,6 +758,12 @@ class KiCADInterface(SchematicHandlersMixin):
             "edit_schematic_text": self._handle_edit_schematic_text,
             "delete_schematic_text": self._handle_delete_schematic_text,
             "delete_schematic_no_connect": self._handle_delete_schematic_no_connect,
+            "add_schematic_junction": self._handle_add_schematic_junction,
+            "delete_schematic_junction": self._handle_delete_schematic_junction,
+            "list_stale_junctions": self._handle_list_stale_junctions,
+            "set_schematic_component_flags": self._handle_set_schematic_component_flags,
+            "set_title_block": self._handle_set_title_block,
+            "purge_unused_lib_symbols": self._handle_purge_unused_lib_symbols,
             "add_sheet_pin": self._handle_add_sheet_pin,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands

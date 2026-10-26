@@ -127,7 +127,7 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "schematic",
     description:
-      "Schematic operations: create, inspect, add/edit/delete components and their properties, wire connections, no-connects, net labels, text notes, netlists, annotation, ERC",
+      "Schematic operations: create, inspect, add/edit/delete components and their properties and flags (DNP, BOM), wire connections, junctions, no-connects, net labels, text notes, title block, lib_symbols cleanup, netlists, annotation, ERC",
     tools: [
       "create_schematic",
       "add_schematic_component",
@@ -170,6 +170,11 @@ export const toolCategories: ToolCategory[] = [
       "edit_schematic_text",
       "delete_schematic_text",
       "delete_schematic_no_connect",
+      "add_schematic_junction",
+      "delete_schematic_junction",
+      "set_schematic_component_flags",
+      "set_title_block",
+      "purge_unused_lib_symbols",
     ],
   },
   {
@@ -237,7 +242,7 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "schematic_layout",
     description:
-      "Schematic layout and lint: move and autoplace Ref/Value fields, suggest decluttering, find overlapping elements, wires crossing symbols, floating labels and orphaned wires, inspect a region, and find/snap off-grid coordinates",
+      "Schematic layout and lint: move and autoplace Ref/Value fields, suggest decluttering, find overlapping elements, wires crossing symbols, floating labels, orphaned wires and stale junctions, inspect a region, and find/snap off-grid coordinates",
     tools: [
       "set_schematic_property_position",
       "batch_set_schematic_property_positions",
@@ -251,6 +256,7 @@ export const toolCategories: ToolCategory[] = [
       "list_floating_labels",
       "find_orphaned_wires",
       "get_elements_in_region",
+      "list_stale_junctions",
     ],
   },
   {

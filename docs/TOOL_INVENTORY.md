@@ -5,8 +5,8 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.3
-**Tools registered on the server:** 250
-**Tools indexed for keyword discovery:** 250 in 20 categories
+**Tools registered on the server:** 256
+**Tools indexed for keyword discovery:** 256 in 20 categories
 **Last updated:** 2026-10-26
 
 ## How to read this document
@@ -195,7 +195,7 @@ _Source: `src/tools/export.ts`_
 
 ---
 
-## Schematic (49 tools)
+## Schematic (55 tools)
 
 _Source: `src/tools/schematic.ts`_
 
@@ -241,6 +241,7 @@ _Source: `src/tools/schematic.ts`_
 | `find_wires_crossing_symbols`         | Find wires that cross through symbol bodies (DRC helper)                                                                                             | `schematic_layout`      |
 | `list_floating_labels`                | List net labels not connected to any wire                                                                                                            | `schematic_layout`      |
 | `find_orphaned_wires`                 | Find wire segments not connected at one or both ends                                                                                                 | `schematic_layout`      |
+| `list_stale_junctions`                | List junction dots that no longer join three or more wire ends or pins — typically left behind after wires were deleted.                             | `schematic_layout`      |
 | `snap_to_grid`                        | Snap an XY coordinate to the nearest schematic grid point                                                                                            | `schematic_layout`      |
 | `lint_offgrid`                        | Report every off-grid connection-relevant coordinate in a schematic — wire/bus endpoints, symbol origins, label/junction/no_connect anchors — and... | `schematic_layout`      |
 | `get_net_at_point`                    | Get the net name at an XY coordinate                                                                                                                 | `schematic`             |
@@ -249,6 +250,11 @@ _Source: `src/tools/schematic.ts`_
 | `add_schematic_text`                  | Add free-form text annotation to schematic                                                                                                           | `schematic`             |
 | `edit_schematic_text`                 | Edit a free-form text annotation in place: content, position, angle, font size, bold, italic or justification.                                       | `schematic`             |
 | `delete_schematic_text`               | Delete a free-form text annotation, found by uuid or by its text (match).                                                                            | `schematic`             |
+| `add_schematic_junction`              | Add a junction dot at a point where three or more wire ends or pins meet.                                                                            | `schematic`             |
+| `delete_schematic_junction`           | Remove the junction dot at a position (e.g.                                                                                                          | `schematic`             |
+| `set_schematic_component_flags`       | Set the Do-not-populate, Exclude-from-BOM, Exclude-from-board and Exclude-from-simulation attributes of a placed symbol, on every unit of a...       | `schematic`             |
+| `set_title_block`                     | Set the title block of one .kicad_sch file: title, date, revision, company and comments 1-9.                                                         | `schematic`             |
+| `purge_unused_lib_symbols`            | Drop symbol definitions from the schematic's lib_symbols cache that no placed symbol uses any more, as Eeschema does on save.                        | `schematic`             |
 | `add_sheet_pin`                       | Add a sheet pin to a hierarchical sheet symbol                                                                                                       | `schematic_hierarchy`   |
 
 ---
@@ -525,7 +531,7 @@ _Source: `src/tools/toolboxes.ts`_
 | `routing.ts`             | Routing                                | 17      |
 | `design-rules.ts`        | Design Rules and DRC                   | 7       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
-| `schematic.ts`           | Schematic                              | 49      |
+| `schematic.ts`           | Schematic                              | 55      |
 | `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
 | `schematic-hierarchy.ts` | Hierarchical Sheets                    | 5       |
 | `schematic-layout.ts`    | Schematic Layout and Cosmetics         | 5       |
@@ -545,11 +551,11 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **250** |
+| **Total**                |                                        | **256** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 250 of the 250 registered tools.
+These are the categories `search_tools` searches. They cover 256 of the 256 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -557,12 +563,12 @@ These are the categories `search_tools` searches. They cover 250 of the 250 regi
 | `component`                | 24            |
 | `export`                   | 27            |
 | `drc`                      | 8             |
-| `schematic`                | 39            |
+| `schematic`                | 44            |
 | `library`                  | 9             |
 | `symbol_library`           | 17            |
 | `symbol_pins`              | 3             |
 | `schematic_hierarchy`      | 7             |
-| `schematic_layout`         | 12            |
+| `schematic_layout`         | 13            |
 | `schematic_batch`          | 6             |
 | `routing`                  | 14            |
 | `autoroute`                | 4             |
@@ -573,6 +579,6 @@ These are the categories `search_tools` searches. They cover 250 of the 250 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **250**       |
+| **Indexed total**          | **256**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **250**       |
+| **Registered total**       | **256**       |

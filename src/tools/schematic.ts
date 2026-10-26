@@ -142,7 +142,8 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
     `Remove a placed symbol from a KiCAD schematic (.kicad_sch).
 
 This removes the symbol instance (the placed component) from the schematic.
-It does NOT remove the symbol definition from lib_symbols.
+Its symbol definition stays in lib_symbols unless purgeUnusedLibSymbols is set
+(or purge_unused_lib_symbols is run later).
 
 With deleteAttachedLabels, net labels sitting exactly on the deleted
 component's pin positions are removed too — unless a label is still attached
@@ -173,12 +174,20 @@ To remove a footprint from a PCB, use delete_component instead.`,
           "Unit of a multi-unit part (1=A, 2=B, …) to remove. Every unit shares one " +
             "reference, so without this ALL units of the part are deleted.",
         ),
+      purgeUnusedLibSymbols: z
+        .boolean()
+        .optional()
+        .describe(
+          "Afterwards drop lib_symbols entries no placed symbol uses any more, as Eeschema " +
+            "does on save (default false)",
+        ),
     },
     async (args: {
       schematicPath: string;
       reference: string;
       deleteAttachedLabels?: boolean;
       unit?: number;
+      purgeUnusedLibSymbols?: boolean;
     }) => {
       const result = await callKicadScript("delete_schematic_component", args);
       if (result.success) {
@@ -186,11 +195,15 @@ To remove a footprint from a PCB, use delete_component instead.`,
           Array.isArray(result.deleted_labels) && result.deleted_labels.length > 0
             ? ` (also removed ${result.deleted_labels.length} attached label(s))`
             : "";
+        const purgeNote =
+          Array.isArray(result.purgedLibSymbols) && result.purgedLibSymbols.length > 0
+            ? ` (purged lib_symbols: ${result.purgedLibSymbols.join(", ")})`
+            : "";
         return {
           content: [
             {
               type: "text",
-              text: `Successfully removed ${args.reference} from schematic${labelNote}`,
+              text: `Successfully removed ${args.reference} from schematic${labelNote}${purgeNote}`,
             },
           ],
         };
@@ -2021,6 +2034,29 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
+  // Find stale junctions
+  server.tool(
+    "list_stale_junctions",
+    "List junction dots that no longer join three or more wire ends or pins — typically left " +
+      "behind after wires were deleted. A wire running straight through a junction counts as " +
+      "two. Remove them with delete_schematic_junction.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("list_stale_junctions", args);
+      const stale: any[] = result.stale_junctions || [];
+      const lines = stale.map(
+        (j) => `  (${j.position.x}, ${j.position.y}) joins ${j.connections}  uuid=${j.uuid}`,
+      );
+      return reply(
+        result,
+        "Failed to list stale junctions",
+        stale.length ? `${result.message}:\n${lines.join("\n")}` : "No stale junctions found.",
+      );
+    },
+  );
+
   // Snap schematic elements to grid
   server.tool(
     "snap_to_grid",
@@ -2359,6 +2395,104 @@ edit_schematic_component and set its value to an empty string.`,
     async (args: { schematicPath: string; uuid?: string; match?: string }) => {
       const result = await callKicadScript("delete_schematic_text", args);
       return reply(result, "Failed to delete text annotation");
+    },
+  );
+
+  const position = z.array(z.number()).length(2).describe("Position [x, y] in mm");
+
+  // Add junction dot
+  server.tool(
+    "add_schematic_junction",
+    "Add a junction dot at a point where three or more wire ends or pins meet. Does nothing " +
+      "when a junction is already there.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      position,
+    },
+    async (args: { schematicPath: string; position: number[] }) => {
+      const result = await callKicadScript("add_schematic_junction", args);
+      return reply(result, "Failed to add junction");
+    },
+  );
+
+  // Delete junction dot
+  server.tool(
+    "delete_schematic_junction",
+    "Remove the junction dot at a position (e.g. a stale one reported by list_stale_junctions).",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      position,
+    },
+    async (args: { schematicPath: string; position: number[] }) => {
+      const result = await callKicadScript("delete_schematic_junction", args);
+      return reply(result, "Failed to delete junction");
+    },
+  );
+
+  // Set dnp / in_bom / on_board / exclude_from_sim
+  server.tool(
+    "set_schematic_component_flags",
+    "Set the Do-not-populate, Exclude-from-BOM, Exclude-from-board and Exclude-from-simulation " +
+      "attributes of a placed symbol, on every unit of a multi-unit part. Flags not given are " +
+      "left as they are.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      reference: z.string().describe("Reference designator (e.g. R1, U3)"),
+      dnp: z.boolean().optional().describe("Do not populate"),
+      inBom: z.boolean().optional().describe("Include in the bill of materials"),
+      onBoard: z.boolean().optional().describe("Include on the board (exported to the PCB)"),
+      excludeFromSim: z.boolean().optional().describe("Exclude from simulation"),
+    },
+    async (args: Record<string, unknown>) => {
+      const result = await callKicadScript("set_schematic_component_flags", args);
+      return reply(result, "Failed to set component flags");
+    },
+  );
+
+  const comments = Object.fromEntries(
+    [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [
+      `comment${n}`,
+      z.string().optional().describe(`Comment ${n}`),
+    ]),
+  );
+
+  // Set title block
+  server.tool(
+    "set_title_block",
+    "Set the title block of one .kicad_sch file: title, date, revision, company and comments " +
+      "1-9. Each sheet of a hierarchy has its own title block. Fields not given are left as " +
+      "they are; an empty string clears a field.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      title: z.string().optional().describe("Title"),
+      date: z.string().optional().describe("Date, free text (KiCad's own is YYYY-MM-DD)"),
+      rev: z.string().optional().describe("Revision"),
+      company: z.string().optional().describe("Company"),
+      ...comments,
+    },
+    async (args: Record<string, unknown>) => {
+      const result = await callKicadScript("set_title_block", args);
+      return reply(
+        result,
+        "Failed to set title block",
+        `${result.message}\n${JSON.stringify(result.titleBlock, null, 2)}`,
+      );
+    },
+  );
+
+  // Purge unused lib_symbols
+  server.tool(
+    "purge_unused_lib_symbols",
+    "Drop symbol definitions from the schematic's lib_symbols cache that no placed symbol uses " +
+      "any more, as Eeschema does on save. Leftovers appear after delete_schematic_component " +
+      "or swapping a part for another.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("purge_unused_lib_symbols", args);
+      const names = result.purged?.length ? `: ${result.purged.join(", ")}` : "";
+      return reply(result, "Failed to purge lib_symbols", `${result.message}${names}`);
     },
   );
 
