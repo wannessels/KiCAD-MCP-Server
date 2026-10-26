@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pcbnew  # type: ignore
+from utils.kicad_format import schematic_header, stamp_schematic
 from utils.kicad_project import write_kicad_pro
 from utils.project_settings_guard import (
     preserve_project_settings,
@@ -113,11 +114,13 @@ class ProjectCommands:
                 with open(schematic_path, "r", encoding="utf-8") as f:
                     content = f.read()
                 schematic_root_uuid = str(uuid_module.uuid4())
-                content = re.sub(
-                    r"\(uuid [0-9a-fA-F-]+\)",
-                    f"(uuid {schematic_root_uuid})",
-                    content,
-                    count=1,  # Only replace first (schematic) UUID
+                content = stamp_schematic(
+                    re.sub(
+                        r"\(uuid [0-9a-fA-F-]+\)",
+                        f"(uuid {schematic_root_uuid})",
+                        content,
+                        count=1,  # Only replace first (schematic) UUID
+                    )
                 )
                 with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
@@ -132,13 +135,7 @@ class ProjectCommands:
 
                 schematic_root_uuid = str(uuid_module.uuid4())
                 with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
-                    # KiCad 10 schematic header (matches what eeschema writes for a
-                    # new file). The older 20250114 token is the KiCad 9 format and
-                    # is stale under KiCad 10 (issue #221).
-                    f.write(
-                        '(kicad_sch (version 20260101) (generator "eeschema")'
-                        ' (generator_version "10.0")\n\n'
-                    )
+                    f.write(schematic_header())
                     f.write(f"  (uuid {schematic_root_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")

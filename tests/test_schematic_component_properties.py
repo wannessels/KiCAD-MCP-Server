@@ -269,14 +269,10 @@ class TestEditSchematicComponentProperties:
         assert mpn["y"] == pytest.approx(60.0)
         assert mpn["angle"] == pytest.approx(90.0)
 
-        # Verify the (hide no) flag actually made it into the file
+        # Visible: no hide flag at all, which is how KiCad writes a shown field
         content = sch_with_r1.read_text(encoding="utf-8")
-        m = re.search(
-            r'\(property\s+"MPN"\s+"[^"]*"\s+\(at[^)]+\)\s+\(effects.*?\(hide no\)',
-            content,
-            re.DOTALL,
-        )
-        assert m is not None, "Expected (hide no) on the MPN property"
+        m = re.search(r'\(property\s+"MPN"\s+"[^"]*".*?\n\s*\)', content, re.DOTALL)
+        assert m is not None and "(hide" not in m.group(0), m and m.group(0)
 
     def test_new_property_defaults_to_hidden(self, sch_with_r1: Any) -> None:
         iface = self._iface()

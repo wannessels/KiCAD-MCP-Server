@@ -6,6 +6,44 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Mirrored symbols keep their fields where they were put.**
+  `rotate_schematic_component` wrote `(mirror x|y)` at the end of the symbol
+  block. eeschema applies a mirror to the field positions it has already read,
+  so every field of a mirrored symbol was drawn mirrored about the symbol. The
+  token now goes right after `(at ...)`, where eeschema writes it, and a file
+  that still has it at the end keeps its fields where they were drawn. Fields
+  now turn and flip with the symbol, as they do in eeschema.
+- **Field angle and justify are as displayed.** eeschema stores a field's
+  angle and justification in the symbol's frame, so on a rotated or mirrored
+  symbol `angle: 0` read vertically and `justify: left` hung to the left.
+  `edit_schematic_component` `fieldPositions`, `set_schematic_property_position`,
+  `batch_set_schematic_property_positions`, `autoplace_schematic_fields` and
+  `batch_add_components` now take both as drawn and convert (checked against
+  kicad-cli renders). The position tools no longer show hidden fields unless
+  asked (`visible` defaults to unchanged), take a `justify`, and take a `unit`
+  for one placement of a multi-unit part, as does `edit_schematic_component`.
+- **Library field offsets are Y-flipped.** A placed symbol's fields took the
+  library's Y-up offsets as sheet Y-down, so `power:GND`'s name sat above the
+  glyph instead of below it.
+- **`batch_add_components` keeps power symbols' layout.** Its field
+  auto-placement moved a `#PWR` reference beside the glyph and made it visible.
+- **`lint_schematic_cosmetic` `orient_labels` turned labels into the symbol.**
+  It read `get_pin_angle`'s outward direction as the pin's inward one.
+- **`batch_connect` only wires labels that face each other.** Any opposite
+  label within 14 mm counted, so two labels on opposite sides of one connector
+  were joined by a diagonal wire across its body. They must now be in line and
+  point at each other.
+
+### Changes
+
+- **New files use the installed KiCad's file formats.** Schematics were
+  written as 20260101 while KiCad 10.0.7 writes 20260306, and symbol libraries
+  and footprints as KiCad 9 (20241209, 20241229, `generator_version "9.0"`).
+  The versions now come from the installed `kicad-cli`, which upgrades a
+  minimal file of each kind once per binary (cached on disk), with a KiCad 9 /
+  10 table as fallback. Hidden fields are written as KiCad 10 writes them, a
+  top-level `(hide yes)`, in KiCad 10 files.
+
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG

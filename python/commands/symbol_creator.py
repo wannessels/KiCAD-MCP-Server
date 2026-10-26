@@ -4,8 +4,9 @@ Symbol Creator for KiCAD MCP Server
 Creates and edits .kicad_sym symbol library files using raw S-Expression text generation.
 No sexpdata – pure f-string assembly to guarantee format correctness.
 
-KiCAD 9 .kicad_sym format:
-  - Library file starts with (kicad_symbol_lib (version 20241209) ...)
+.kicad_sym format (KiCad 9 and 10):
+  - Library file starts with (kicad_symbol_lib (version ...) ...), the version the
+    installed KiCad writes (utils.kicad_format)
   - Each symbol has a parent block with properties + two sub-symbols:
       SymbolName_0_1  → body graphics (rectangle, polyline, circle, arc)
       SymbolName_1_1  → pins
@@ -18,11 +19,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from commands.library_tables import global_table_path, no_global_table_message
+from utils.kicad_format import empty_symbol_lib
 from utils.sexpr_format import escape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
-
-KICAD9_SYMBOL_LIB_VERSION = "20241209"
 
 
 def _invalidate_symbol_caches() -> None:
@@ -163,13 +163,7 @@ class SymbolCreator:
         if lib_path.exists():
             lib_content = lib_path.read_text(encoding="utf-8")
         else:
-            lib_content = (
-                f"(kicad_symbol_lib\n"
-                f"  (version {KICAD9_SYMBOL_LIB_VERSION})\n"
-                f'  (generator "kicad-mcp")\n'
-                f'  (generator_version "9.0")\n'
-                f")\n"
-            )
+            lib_content = empty_symbol_lib()
 
         # Check for duplicate
         if f'(symbol "{name}"' in lib_content:

@@ -178,12 +178,13 @@ class SchematicBatchCommands:
                     block_text, block_start, block_end = _find_placed_symbol_block(
                         raw_content, reference, unit
                     )
-                    if auto_position_fields and block_text:
+                    # Power symbols keep the library layout (Value by the glyph, #PWR hidden).
+                    if auto_position_fields and block_text and not reference.startswith("#"):
                         cx, cy = _snap(x), _snap(y)
                         new_block = block_text
                         for prop, px, py, pa in _field_positions_for_pins(cx, cy, all_pins):
                             new_block, _ = _move_property_in_block(
-                                new_block, prop, px, py, pa, True
+                                new_block, prop, px, py, pa, justify="center"
                             )
                         if new_block != block_text:
                             raw_content = (

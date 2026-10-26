@@ -30,6 +30,8 @@ sys.modules.setdefault("skip", MagicMock())
 _PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(_PYTHON_DIR))
 
+from utils.kicad_format import formats  # noqa: E402
+
 _COMMANDS_DIR = _PYTHON_DIR / "commands"
 
 
@@ -57,8 +59,8 @@ def _assert_blank(sch_text: str) -> None:
     assert "(lib_symbols" in sch_text
     assert "Device:R" not in sch_text
     assert '(symbol "' not in sch_text, "lib_symbols must be empty"
-    # And it must carry the current KiCad 10 header.
-    assert "(version 20260101)" in sch_text
+    # And it must carry the installed KiCad's header.
+    assert f"(version {formats()['sch']})" in sch_text
     assert "20250114" not in sch_text
 
 

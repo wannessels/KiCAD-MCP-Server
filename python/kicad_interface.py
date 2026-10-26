@@ -2311,9 +2311,6 @@ class KiCADInterface(SchematicHandlersMixin):
         cx = new_x if new_x is not None else default_position[0]
         cy = new_y if new_y is not None else default_position[1]
         ca = new_angle if new_angle is not None else 0
-        # New properties default to hidden (BOM/sourcing data normally has no
-        # visible footprint on the schematic canvas).
-        hide_str = "(hide yes)" if (new_hide is None or new_hide) else "(hide no)"
         escaped = self._escape_sexpr_string(str(new_value))
         escaped_name = self._escape_sexpr_string(str(name))
 
@@ -2326,7 +2323,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
         new_prop = (
             f'    (property "{escaped_name}" "{escaped}" (at {cx} {cy} {ca})\n'
-            f"      (effects (font (size {font_size} {font_size})){justify_str} {hide_str})\n"
+            f"      (effects (font (size {font_size} {font_size})){justify_str})\n"
             f"    )"
         )
 
@@ -2346,46 +2343,20 @@ class KiCADInterface(SchematicHandlersMixin):
         else:
             block = block[: last_prop_end + 1] + "\n" + new_prop + block[last_prop_end + 1 :]
 
+        # New properties default to hidden (BOM/sourcing data normally has no
+        # visible footprint on the schematic canvas).
+        block = self._set_hide_on_property(block, name, new_hide is None or bool(new_hide))
         return block, "added"
 
     def _set_hide_on_property(self, block: str, name: str, hide: bool) -> str:
-        """Set the (hide yes|no) flag on a named property's effects clause.
+        """Hide or show a named property, in the form the file's KiCad version writes.
 
-        Handles three pre-existing forms:
-            (effects (font (size 1.27 1.27)))                   — no hide flag
-            (effects (font (size 1.27 1.27)) hide)              — legacy bare token
-            (effects (font (size 1.27 1.27)) (hide yes|no))     — KiCad 9 form
+        Replaces any earlier flag: a bare legacy ``hide``, ``(hide yes|no)`` inside
+        ``(effects ...)``, or KiCad 10's top-level ``(hide yes)``.
         """
-        import re
+        from commands.schematic_text_utils import _apply_visibility
 
-        prop_match = re.search(
-            r'\(property\s+"' + re.escape(name) + r'"',
-            block,
-        )
-        if not prop_match:
-            return block
-        prop_start = prop_match.start()
-        prop_end = self._find_matching_paren(block, prop_start)
-        if prop_end < 0:
-            return block
-
-        # Locate the (effects ...) clause inside the property
-        prop_segment = block[prop_start : prop_end + 1]
-        eff_match = re.search(r"\(effects\b", prop_segment)
-        if not eff_match:
-            return block
-        eff_start = prop_start + eff_match.start()
-        eff_end = self._find_matching_paren(block, eff_start)
-        if eff_end < 0:
-            return block
-
-        eff_inner = block[eff_start + 1 : eff_end]  # 'effects (font ...) ...'
-        eff_inner = re.sub(r"\s*\(hide\s+(yes|no)\)", "", eff_inner)
-        eff_inner = re.sub(r"\s+hide\b(?!\s+(yes|no))", "", eff_inner)
-        eff_inner = eff_inner.rstrip() + f' (hide {"yes" if hide else "no"})'
-
-        new_effects = "(" + eff_inner + ")"
-        return block[:eff_start] + new_effects + block[eff_end + 1 :]
+        return _apply_visibility(block, name, not hide)
 
     def _set_justify_on_property(self, block: str, name: str, justify: str) -> str:
         """Set or clear the (justify ...) directive on a named property's effects clause.
@@ -2398,41 +2369,12 @@ class KiCADInterface(SchematicHandlersMixin):
         entirely, which is how KiCad represents centered alignment.
 
         Handles effects clauses that already contain a (justify ...) token, and
-        those that do not.
+        those that do not. The justification is written as given (the stored,
+        symbol-frame value); fieldPositions converts from displayed first.
         """
-        import re
+        from commands.schematic_text_utils import _set_justify
 
-        prop_match = re.search(
-            r'\(property\s+"' + re.escape(name) + r'"',
-            block,
-        )
-        if not prop_match:
-            return block
-        prop_start = prop_match.start()
-        prop_end = self._find_matching_paren(block, prop_start)
-        if prop_end < 0:
-            return block
-
-        prop_segment = block[prop_start : prop_end + 1]
-        eff_match = re.search(r"\(effects\b", prop_segment)
-        if not eff_match:
-            return block
-        eff_start = prop_start + eff_match.start()
-        eff_end = self._find_matching_paren(block, eff_start)
-        if eff_end < 0:
-            return block
-
-        eff_inner = block[eff_start + 1 : eff_end]  # 'effects (font ...) ...'
-        # Remove any pre-existing (justify ...) token
-        eff_inner = re.sub(r"\s*\(justify\b[^)]*\)", "", eff_inner)
-        # "center" is the KiCad default — omitting the directive means centered
-        tokens = justify.strip().split()
-        is_center_only = all(t == "center" for t in tokens)
-        if not is_center_only:
-            eff_inner = eff_inner.rstrip() + f" (justify {justify.strip()})"
-
-        new_effects = "(" + eff_inner + ")"
-        return block[:eff_start] + new_effects + block[eff_end + 1 :]
+        return _set_justify(block, name, justify)
 
     def _remove_property_from_block(self, block: str, name: str) -> Tuple[str, bool]:
         """Remove a property from the symbol block. Returns (new_block, removed_bool)."""

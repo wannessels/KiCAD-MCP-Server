@@ -16,6 +16,8 @@ from unittest.mock import MagicMock, mock_open, patch
 # imported in a plain Python environment.
 sys.modules.setdefault("pcbnew", MagicMock())
 
+from utils.kicad_format import formats  # noqa: E402
+
 # Import the module directly (bypasses python/commands/__init__.py which would
 # otherwise pull in board/component commands that also need pcbnew/skip).
 _spec = importlib.util.spec_from_file_location(
@@ -76,6 +78,6 @@ def test_create_project_fallback_schematic_uses_kicad10_header():
 
     assert result["success"] is True, result
     written = "".join(call.args[0] for call in m().write.call_args_list)
-    assert "(version 20260101)" in written, written
+    assert f"(version {formats()['sch']})" in written, written
     assert 'generator "eeschema"' in written
     assert "20250114" not in written

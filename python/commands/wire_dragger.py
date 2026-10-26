@@ -52,6 +52,17 @@ def _rotate(x: float, y: float, angle_deg: float) -> Tuple[float, float]:
     return x * c - y * s, x * s + y * c
 
 
+def _orient(dx: float, dy: float, rotation: float, mirror_x: bool, mirror_y: bool):
+    """A sheet-space offset through a symbol's rotation then mirror (pin_world_xy, no Y-flip)."""
+    rx, ry = _rotate(dx, dy, -rotation)
+    return (-rx if mirror_y else rx), (-ry if mirror_x else ry)
+
+
+def _unorient(dx: float, dy: float, rotation: float, mirror_x: bool, mirror_y: bool):
+    """Inverse of _orient."""
+    return _rotate(-dx if mirror_y else dx, -dy if mirror_x else dy, rotation)
+
+
 def _coords_match(ax: float, ay: float, bx: float, by: float, eps: float = EPS) -> bool:
     return abs(ax - bx) < eps and abs(ay - by) < eps
 
@@ -326,33 +337,59 @@ class WireDragger:
 
         new_mirror: "x", "y", or None (removes any existing mirror token).
         Returns True if the symbol was found and updated.
+
+        The (mirror) token goes right after (at), where eeschema writes it:
+        eeschema applies a mirror to the field positions it has already read, so a
+        token after the properties draws every field mirrored about the symbol.
+        The fields turn with the symbol, as they do when rotating in eeschema.
         """
         found = WireDragger.find_symbol(sch_data, reference, unit)
         if found is None:
             return False
-        item = found[0]
+        item, sym_x, sym_y, old_rotation, _, old_mirror_x, old_mirror_y = found
         at_k = _K["at"]
         mirror_k = _K["mirror"]
+        prop_k = _K["property"]
+
+        mirror_at = [
+            i for i, s in enumerate(item) if isinstance(s, list) and s and s[0] == mirror_k
+        ]
+        first_prop = next(
+            (i for i, s in enumerate(item) if isinstance(s, list) and s and s[0] == prop_k),
+            len(item),
+        )
+        mirror_after_fields = bool(mirror_at) and mirror_at[0] > first_prop
+
+        new_mirror_x, new_mirror_y = new_mirror == "x", new_mirror == "y"
+        for sub in item[1:]:
+            if not (isinstance(sub, list) and sub and sub[0] == prop_k):
+                continue
+            at = next((a for a in sub if isinstance(a, list) and a and a[0] == at_k), None)
+            if at is None or len(at) < 3:
+                continue
+            dx, dy = float(at[1]) - sym_x, float(at[2]) - sym_y
+            if mirror_after_fields:
+                dx, dy = _orient(dx, dy, 0, old_mirror_x, old_mirror_y)
+            dx, dy = _unorient(dx, dy, old_rotation, old_mirror_x, old_mirror_y)
+            dx, dy = _orient(dx, dy, new_rotation, new_mirror_x, new_mirror_y)
+            at[1], at[2] = round(sym_x + dx, 4), round(sym_y + dy, 4)
 
         # Update rotation in (at x y rot). KiCad writes symbol angles as
         # integers (0/90/180/270), so normalize integral values to int to
         # match eeschema's output exactly (avoids a spurious "90.0" token).
         rot_val = int(new_rotation) if float(new_rotation).is_integer() else new_rotation
-        for sub in item[1:]:
+        at_index = None
+        for i, sub in enumerate(item):
             if isinstance(sub, list) and sub and sub[0] == at_k and len(sub) >= 4:
                 sub[3] = rot_val
+                at_index = i
                 break
 
-        # Remove existing (mirror ...) token(s)
-        to_remove = [
-            i for i, sub in enumerate(item) if isinstance(sub, list) and sub and sub[0] == mirror_k
-        ]
-        for i in reversed(to_remove):
+        for i in reversed(mirror_at):
             del item[i]
-
-        # Insert new mirror token if requested
         if new_mirror in ("x", "y"):
-            item.append([mirror_k, Symbol(new_mirror)])
+            insert_at = at_index + 1 if at_index is not None else len(item)
+            item.insert(insert_at, [mirror_k, Symbol(new_mirror)])
 
         return True
 

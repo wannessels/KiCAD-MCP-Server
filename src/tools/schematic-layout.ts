@@ -11,19 +11,34 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
   // Move a single Reference/Value field
   server.tool(
     "set_schematic_property_position",
-    "Move a component's Reference or Value field label to an absolute (x, y) coordinate (mm), optionally rotating or hiding it. Only 'Reference' and 'Value' are supported. Use autoplace_schematic_fields to place all of them automatically.",
+    "Move a component's Reference or Value field label to an absolute (x, y) coordinate (mm), optionally rotating, justifying or hiding it. Angle and justify are as displayed, whatever the symbol's rotation or mirror. Only 'Reference' and 'Value' are supported. Use autoplace_schematic_fields to place all of them automatically.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Component reference designator (e.g., R1, U2)"),
       property: z.enum(["Reference", "Value"]).describe("Which field to move"),
       x: z.number().describe("New X position in mm (absolute schematic coordinate)"),
       y: z.number().describe("New Y position in mm (absolute schematic coordinate)"),
-      angle: z.number().optional().default(0).describe("Text angle in degrees (default 0)"),
+      angle: z
+        .number()
+        .optional()
+        .default(0)
+        .describe("Text angle as displayed: 0 reads left-to-right, 90 bottom-to-top (default 0)"),
+      justify: z
+        .string()
+        .optional()
+        .describe(
+          "Justification as displayed: 'left' puts the text right of (x, y); 'left top', 'center', ... " +
+            "Omit to keep the stored justification.",
+        ),
       visible: z
         .boolean()
         .optional()
-        .default(true)
-        .describe("Whether the field is visible (default true)"),
+        .describe("Show or hide the field; omit to leave its visibility unchanged"),
+      unit: z
+        .number()
+        .int()
+        .optional()
+        .describe("Unit of a multi-unit part (1=A, 2=B, ...); default: the first placement"),
     },
     async (args: any) => {
       const result = await callKicadScript("set_schematic_property_position", args);
@@ -41,7 +56,7 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
   // Move many fields in one file read/write
   server.tool(
     "batch_set_schematic_property_positions",
-    "Move many Reference/Value field labels in a single file read/write — far faster than repeated set_schematic_property_position calls. Pass an 'updates' array; each item is {reference, property:'Reference'|'Value', x, y, angle?, visible?}. Returns per-item applied/failed lists.",
+    "Move many Reference/Value field labels in a single file read/write — far faster than repeated set_schematic_property_position calls. Pass an 'updates' array; each item is {reference, property:'Reference'|'Value', x, y, angle?, justify?, visible?, unit?}, angle and justify as displayed. Omitted justify and visible are left as they are. Returns per-item applied/failed lists.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       updates: z
@@ -52,7 +67,9 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
             x: z.number(),
             y: z.number(),
             angle: z.number().optional().default(0),
-            visible: z.boolean().optional().default(true),
+            justify: z.string().optional(),
+            visible: z.boolean().optional(),
+            unit: z.number().int().optional(),
           }),
         )
         .describe("List of field moves to apply"),

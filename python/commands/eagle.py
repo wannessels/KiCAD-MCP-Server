@@ -28,7 +28,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from commands.symbol_creator import KICAD9_SYMBOL_LIB_VERSION
+from utils.kicad_format import formats, schematic_header
 from utils.sexpr_format import escape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
@@ -1109,8 +1109,8 @@ def generate_sym_lib(sym_geoms: List["_EagleSymGeom"], lib_path: str) -> None:
     """
     out: List[str] = []
     out.append(
-        f"(kicad_symbol_lib (version {KICAD9_SYMBOL_LIB_VERSION})"
-        ' (generator "kicad_symbol_editor")\n'
+        f'(kicad_symbol_lib (version {formats()["sym"]}) (generator "kicad_symbol_editor")'
+        f' (generator_version "{formats()["generator_version"]}")\n'
     )
 
     for sg in sym_geoms:
@@ -1379,9 +1379,7 @@ def generate_kicad_sch(
     sch_uuid = _uid()
     out: List[str] = []
 
-    out.append(
-        '(kicad_sch (version 20260101) (generator "eeschema")' ' (generator_version "10.0")\n\n'
-    )
+    out.append(schematic_header())
     out.append(f"  (uuid {sch_uuid})\n\n")
     out.append(f'  (paper "{paper}")\n\n')
 

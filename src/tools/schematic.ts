@@ -249,7 +249,17 @@ use edit_component instead.`,
         .optional()
         .describe(
           "Reposition field labels: map of field name to {x, y, angle, justify?} " +
-            '(e.g. {"Reference": {"x": 12.5, "y": 17.0, "justify": "left"}})',
+            '(e.g. {"Reference": {"x": 12.5, "y": 17.0, "justify": "left"}}). All as displayed: ' +
+            "angle 0 reads left-to-right and justify 'left' puts the text right of (x, y), whatever " +
+            "the symbol's rotation or mirror (KiCad stores them in the symbol's frame; this converts).",
+        ),
+      unit: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          "Unit of a multi-unit part (1=A, 2=B, ...). Its units share one reference, so without " +
+            "this the first placement in the file is edited.",
         ),
       properties: z
         .record(
@@ -314,6 +324,7 @@ use edit_component instead.`,
           }
       >;
       removeProperties?: string[];
+      unit?: number;
     }) => {
       // Normalise array-form justify (["left", "top"]) to the space-separated
       // string form ("left top") that the Python backend expects.

@@ -13,6 +13,7 @@ from commands import dynamic_symbol_loader as dsl_mod
 from commands.dynamic_symbol_loader import DynamicSymbolLoader
 from commands.library_management import LibraryManagementCommands
 from commands.symbol_creator import SymbolCreator
+from utils.kicad_format import formats
 
 SAMPLE_LIB = """(kicad_symbol_lib
 \t(version 20241209)
@@ -107,7 +108,7 @@ def test_export_symbol(tmp_path):
     assert '(symbol "R_10K_0603"' in content
     assert '(symbol "C_100nF_0603"' not in content  # only the exported symbol
     assert content.startswith("(kicad_symbol_lib")
-    assert "(version 20241209)" in content  # same token every writer here uses
+    assert f"(version {formats()['sym']})" in content  # the installed KiCad's format
     assert content.count("(") == content.count(")")
 
 

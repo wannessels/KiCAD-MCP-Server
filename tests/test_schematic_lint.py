@@ -115,7 +115,7 @@ class TestOrientLabels:
 
     @pytest.mark.parametrize(
         "pin_angle,expected_angle,expected_justify",
-        [(0, 180, "right"), (180, 0, "left"), (90, 270, "right"), (270, 90, "left")],
+        [(0, 0, "left"), (180, 180, "right"), (90, 90, "left"), (270, 270, "right")],
     )
     def test_each_cardinal(self, pin_angle, expected_angle, expected_justify):
         src = self._sch(self.LABEL)
@@ -137,7 +137,7 @@ class TestOrientLabels:
     def test_justify_inserted_when_missing(self):
         label = self.LABEL.replace("\t\t\t(justify left bottom)\n", "")
         src = self._sch(label)
-        out, n, _ = _orient_labels(src, {(10.0, 20.0): 180})
+        out, n, _ = _orient_labels(src, {(10.0, 20.0): 0})
         assert n == 1
         assert "(justify left)" in out
 
@@ -146,7 +146,7 @@ class TestOrientLabels:
         src = self._sch(label)
         out, n, _ = _orient_labels(src, {(10.0, 20.0): 90})
         assert n == 1
-        assert "(at 10 20 270)" in out
+        assert "(at 10 20 90)" in out
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +290,8 @@ class TestRotationMirrorIntegration:
             )
             assert m, f"label NET_{pin_num} anchor moved!"
             assert int(m.group(1)) == expected_angle
+            # the text runs the way a wire leaves the pin, out of the body
+            assert expected_angle == pin_map[key]
             assert f"(justify {expected_justify})" in content
 
     def test_anchor_multiset_invariant(self, tmp_path):

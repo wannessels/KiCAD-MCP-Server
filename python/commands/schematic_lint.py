@@ -33,12 +33,13 @@ logger = logging.getLogger("kicad_interface")
 
 _PASSES = ("hide_pin_names", "orient_labels")
 
-# pin sheet-space outward angle -> (label text angle, justify), field-validated.
+# get_pin_angle is the outward direction (0 = right); the label takes it so its text runs
+# out of the body, with eeschema's pairing: 0/90 justify left, 180/270 justify right.
 _ORIENT = {
-    0: (180, "right"),  # pin on left edge  -> text extends left
-    180: (0, "left"),  # pin on right edge -> text extends right
-    90: (270, "right"),  # pin on top edge   -> text reads upward
-    270: (90, "left"),  # pin on bottom edge-> text reads downward
+    0: (0, "left"),  # pin on right edge  -> text extends right
+    180: (180, "right"),  # pin on left edge -> text extends left
+    90: (90, "left"),  # pin on top edge     -> text reads upward
+    270: (270, "right"),  # pin on bottom edge -> text reads downward
 }
 
 

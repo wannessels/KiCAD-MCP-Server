@@ -15,17 +15,10 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from commands.symbol_creator import KICAD9_SYMBOL_LIB_VERSION, _invalidate_symbol_caches
+from commands.symbol_creator import _invalidate_symbol_caches
+from utils.kicad_format import empty_symbol_lib
 
 logger = logging.getLogger("kicad_interface")
-
-_NEW_LIB_HEADER = (
-    "(kicad_symbol_lib\n"
-    f"\t(version {KICAD9_SYMBOL_LIB_VERSION})\n"
-    '\t(generator "kicad-mcp")\n'
-    '\t(generator_version "9.0")\n'
-    ")\n"
-)
 
 
 def _extract_paren_block(text: str, start: int) -> str:
@@ -133,7 +126,7 @@ class LibraryManagementCommands:
             tgt_content = tgt.read_text(encoding="utf-8")
         else:
             tgt.parent.mkdir(parents=True, exist_ok=True)
-            tgt_content = _NEW_LIB_HEADER
+            tgt_content = empty_symbol_lib()
 
         if _find_symbol_block(tgt_content, new_name):
             if not overwrite:
@@ -193,7 +186,8 @@ class LibraryManagementCommands:
         _, _, block = found
 
         # Wrap in a new library shell (header before the block, then close).
-        new_lib = _NEW_LIB_HEADER[: _NEW_LIB_HEADER.rfind(")")] + block + "\n)\n"
+        header = empty_symbol_lib()
+        new_lib = header[: header.rfind(")")] + block + "\n)\n"
 
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("w", encoding="utf-8", newline="\n") as f:

@@ -54,9 +54,10 @@ def _gather_components(
             "value": value,
             "position": {"x": float(position[0]), "y": float(position[1])},
             "rotation": float(position[2]) if len(position) > 2 else 0,
+            "unit": int(symbol.unit.value) if hasattr(symbol, "unit") else None,
         }
 
-        block_text, _, _ = _find_placed_symbol_block(raw_content, ref)
+        block_text, _, _ = _find_placed_symbol_block(raw_content, ref, comp["unit"])
         if block_text:
             ref_pos = _extract_property_position(block_text, "Reference")
             if ref_pos:
@@ -134,7 +135,9 @@ class SchematicFieldLayoutCommands:
             x = params.get("x")
             y = params.get("y")
             angle = params.get("angle", 0)
-            visible = params.get("visible", True)
+            visible = params.get("visible")
+            justify = params.get("justify")
+            unit = params.get("unit")
 
             if not all([schematic_path, reference, property_name, x is not None, y is not None]):
                 return {
@@ -149,7 +152,7 @@ class SchematicFieldLayoutCommands:
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
             content = sch_path.read_text(encoding="utf-8")
-            block_text, block_start, block_end = _find_placed_symbol_block(content, reference)
+            block_text, block_start, block_end = _find_placed_symbol_block(content, reference, unit)
             if block_text is None:
                 return {
                     "success": False,
@@ -158,7 +161,7 @@ class SchematicFieldLayoutCommands:
 
             old_pos = _extract_property_position(block_text, property_name)
             new_block, n_subs = _move_property_in_block(
-                block_text, property_name, x, y, angle, visible
+                block_text, property_name, x, y, angle, visible, justify
             )
             if n_subs == 0:
                 return {
@@ -209,7 +212,9 @@ class SchematicFieldLayoutCommands:
                 x = upd.get("x")
                 y = upd.get("y")
                 angle = upd.get("angle", 0)
-                visible = upd.get("visible", True)
+                visible = upd.get("visible")
+                justify = upd.get("justify")
+                unit = upd.get("unit")
 
                 if not reference or not property_name or x is None or y is None:
                     failed.append(
@@ -230,7 +235,9 @@ class SchematicFieldLayoutCommands:
                     )
                     continue
 
-                block_text, block_start, block_end = _find_placed_symbol_block(content, reference)
+                block_text, block_start, block_end = _find_placed_symbol_block(
+                    content, reference, unit
+                )
                 if block_text is None:
                     failed.append(
                         {
@@ -242,7 +249,7 @@ class SchematicFieldLayoutCommands:
                     continue
 
                 new_block, n_subs = _move_property_in_block(
-                    block_text, property_name, x, y, angle, visible
+                    block_text, property_name, x, y, angle, visible, justify
                 )
                 if n_subs == 0:
                     failed.append(
@@ -514,12 +521,18 @@ class SchematicFieldLayoutCommands:
 
                 placed_field_bboxes.append(ref_bb)
                 placed_field_bboxes.append(val_bb)
-                updates.append(
-                    {"reference": ref, "property": "Reference", "x": ref_x, "y": ref_y, "angle": 0}
-                )
-                updates.append(
-                    {"reference": ref, "property": "Value", "x": val_x, "y": val_y, "angle": 0}
-                )
+                for prop, fx, fy in (("Reference", ref_x, ref_y), ("Value", val_x, val_y)):
+                    updates.append(
+                        {
+                            "reference": ref,
+                            "unit": comp.get("unit"),
+                            "property": prop,
+                            "x": fx,
+                            "y": fy,
+                            "angle": 0,
+                            "justify": "center",
+                        }
+                    )
 
             if not updates:
                 return {"success": True, "message": "No components to update.", "updated_count": 0}

@@ -712,6 +712,8 @@ class SchematicHandlersMixin:
             properties = params.get("properties")
             # list[str]: ["OldField"] — protected built-ins are rejected
             remove_properties = params.get("removeProperties")
+            # one placement of a multi-unit part; its units share the reference
+            unit = params.get("unit")
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -788,10 +790,11 @@ class SchematicHandlersMixin:
                     search_start = pos + 1
                     continue
                 block_text = content[pos : end + 1]
+                unit_m = re.search(r"\(unit\s+(\d+)\)", block_text)
                 if re.search(
                     r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"',
                     block_text,
-                ):
+                ) and (unit is None or (unit_m and int(unit_m.group(1)) == int(unit))):
                     block_start, block_end = pos, end
                     break
                 search_start = end + 1
@@ -799,7 +802,9 @@ class SchematicHandlersMixin:
             if block_start is None or block_end is None:
                 return {
                     "success": False,
-                    "message": f"Component '{reference}' not found in schematic",
+                    "message": f"Component '{reference}'"
+                    + (f" unit {unit}" if unit is not None else "")
+                    + " not found in schematic",
                 }
 
             # Apply property replacements within the found block
@@ -863,22 +868,20 @@ class SchematicHandlersMixin:
                             + block_text[instances_end + 1 :]
                         )
             if field_positions is not None:
+                from commands.schematic_text_utils import _move_property_in_block
+
                 for field_name, pos in field_positions.items():
-                    x = pos.get("x", 0)
-                    y = pos.get("y", 0)
-                    angle = pos.get("angle", 0)
-                    block_text = re.sub(
-                        r'(\(property\s+"'
-                        + re.escape(field_name)
-                        + r'"\s+"[^"]*"\s+)\(at\s+[\d\.\-]+\s+[\d\.\-]+\s+[\d\.\-]+\s*\)',
-                        rf"\1(at {x} {y} {angle})",
-                        block_text,
-                    )
                     justify = pos.get("justify")
-                    if justify is not None:
-                        block_text = self._set_justify_on_property(
-                            block_text, field_name, str(justify)
-                        )
+                    if isinstance(justify, (list, tuple)):
+                        justify = " ".join(justify)
+                    block_text, _ = _move_property_in_block(
+                        block_text,
+                        field_name,
+                        pos.get("x", 0),
+                        pos.get("y", 0),
+                        pos.get("angle", 0),
+                        justify=None if justify is None else str(justify),
+                    )
 
             properties_added: Dict[str, Any] = {}
             properties_updated: Dict[str, Any] = {}

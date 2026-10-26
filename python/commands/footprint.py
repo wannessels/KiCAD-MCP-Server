@@ -16,11 +16,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from commands.library_tables import global_table_path, no_global_table_message
+from utils.kicad_format import formats
 from utils.sexpr_format import escape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
-
-KICAD9_FOOTPRINT_VERSION = "20241229"  # .kicad_mod footprint files
 
 
 def _fmt(v: float) -> str:
@@ -109,9 +108,9 @@ class FootprintCreator:
 
         # ---- header ----
         lines.append(f'(footprint "{name}"')
-        lines.append(f"  (version {KICAD9_FOOTPRINT_VERSION})")
+        lines.append(f'  (version {formats()["fp"]})')
         lines.append(f'  (generator "kicad-mcp")')
-        lines.append(f'  (generator_version "9.0")')
+        lines.append(f'  (generator_version "{formats()["generator_version"]}")')
         lines.append(f'  (layer "F.Cu")')
         if description:
             lines.append(f'  (descr "{_esc(description)}")')

@@ -19,6 +19,7 @@ from commands.eagle import (  # noqa: E402
     parse_eagle_schematic,
 )
 from utils.kicad_cli import resolve_kicad_cli  # noqa: E402
+from utils.kicad_format import formats, schematic_header  # noqa: E402
 
 FIXTURE = Path(__file__).parent / "fixtures" / "eagle" / "minimal.sch"
 
@@ -46,9 +47,7 @@ def test_generate_kicad_sch_from_minimal_fixture(tmp_path: Path) -> None:
     assert sch_uuid
     assert dangling == 0
     text = out.read_text(encoding="utf-8")
-    assert text.startswith(
-        '(kicad_sch (version 20260101) (generator "eeschema")' ' (generator_version "10.0")'
-    )
+    assert text.startswith(schematic_header())
     assert "eagle_import:" in text
     assert "(symbol (lib_id" in text
     assert "(wire" in text
@@ -65,7 +64,7 @@ def test_generate_sym_lib_uses_supported_format_version(tmp_path: Path) -> None:
     generate_sym_lib(list(unique_symbols.values()), str(out))
 
     text = out.read_text(encoding="utf-8")
-    assert text.startswith("(kicad_symbol_lib (version 20241209)")
+    assert text.startswith(f"(kicad_symbol_lib (version {formats()['sym']})")
     assert "20250114" not in text
 
 

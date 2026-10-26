@@ -949,10 +949,13 @@ class DynamicSymbolLoader:
             """Return (abs_x, abs_y, text_angle, effects_str, hidden) for a property."""
             if name in lib_props:
                 dx, dy, text_ang, eff, hidden = lib_props[name]
+                dy = -dy  # library Y-up -> sheet Y-down, as for pins (WireDragger.pin_world_xy)
             else:
                 dx, dy, text_ang, eff = fallback_dx, fallback_dy, fallback_angle, _DEFAULT_EFFECTS
                 hidden = False
             rdx, rdy = self._rotate_offset(dx, dy, angle)
+            if mirror_y:
+                rdx = -rdx
             return round(x + rdx, 3), round(y + rdy, 3), text_ang, eff, hidden
 
         # Reference/Value inherit the library's visibility. Power symbols

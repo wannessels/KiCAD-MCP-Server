@@ -7,6 +7,7 @@ import uuid
 from typing import Any, List, Optional
 
 import sexpdata
+from utils.kicad_format import schematic_header, stamp_schematic
 from utils.sexpr_format import prettify
 
 try:
@@ -159,11 +160,13 @@ class SchematicManager:
                 with open(output_path, "r", encoding="utf-8") as f:
                     content = f.read()
                 new_uuid = str(uuid.uuid4())
-                content = re.sub(
-                    r"\(uuid [0-9a-fA-F-]+\)",
-                    f"(uuid {new_uuid})",
-                    content,
-                    count=1,  # Only replace first (schematic) UUID
+                content = stamp_schematic(
+                    re.sub(
+                        r"\(uuid [0-9a-fA-F-]+\)",
+                        f"(uuid {new_uuid})",
+                        content,
+                        count=1,  # Only replace first (schematic) UUID
+                    )
                 )
                 with open(output_path, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
@@ -176,13 +179,7 @@ class SchematicManager:
                 schematic_uuid = str(uuid.uuid4())
                 # Write with explicit UTF-8 encoding and Unix line endings for cross-platform compatibility
                 with open(output_path, "w", encoding="utf-8", newline="\n") as f:
-                    # KiCad 10 schematic header (matches what eeschema writes for a
-                    # new file). The older 20250114 token is the KiCad 9 format and
-                    # is stale under KiCad 10 (issue #221).
-                    f.write(
-                        '(kicad_sch (version 20260101) (generator "eeschema")'
-                        ' (generator_version "10.0")\n\n'
-                    )
+                    f.write(schematic_header())
                     f.write(f"  (uuid {schematic_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")
