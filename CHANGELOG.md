@@ -4,7 +4,34 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Features
+
+- **Edit and delete schematic text.** `edit_schematic_text` changes a text
+  note in place (content, position, angle, font size, bold, italic,
+  justification). `delete_schematic_text` removes one. Both find the note by
+  uuid, or by its text: an exact match wins, otherwise a case-insensitive
+  substring, and several hits are an error that lists them. The uuid and
+  anything the edit does not name (colour, font face) are kept, and new text
+  is escaped as KiCad writes it.
+- **`add_schematic_text` takes a vertical justify** (`left top`,
+  `right bottom`, ...). Multi-line text now defaults to `top`, so a note grows
+  downward from its anchor; a single line stays `bottom`.
+  `list_schematic_texts` reports `vertical_justify` as well.
+- **`delete_schematic_no_connect`** removes the no-connect flag at a position
+  or on a `componentRef` + `pinNumber`.
+
+These tools edit the file in place: the rest of the file is unchanged, and
+CRLF or LF line endings are kept as found.
+
 ### Bug Fixes
+
+- **`add_schematic_text` with `justify: "center"` wrote a schematic KiCad
+  cannot open.** It wrote `(justify center bottom)`; KiCad 10's parser rejects
+  the keyword (`kicad-cli` reports "Failed to load schematic"). A centered
+  axis is now left out, as KiCad writes it. `list_schematic_texts` reported a
+  note without a justify as `left`; KiCad draws it centered.
+- **`add_schematic_text` and `add_schematic_hierarchical_label` keep the
+  file's line endings.** On Windows they rewrote an LF schematic as CRLF.
 
 - **Mirrored symbols keep their fields where they were put.**
   `rotate_schematic_component` wrote `(mirror x|y)` at the end of the symbol

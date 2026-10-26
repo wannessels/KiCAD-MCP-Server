@@ -24,6 +24,7 @@ import pcbnew
 import sexpdata
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicLoadError, SchematicManager
+from commands.schematic_items import parse_justify
 from commands.wire_manager import WireManager
 from utils.board_items import clone_footprint
 from utils.interactive_schematic import reload_kicad_schematic
@@ -2625,8 +2626,10 @@ class SchematicHandlersMixin:
                 return {"success": False, "message": "text is required"}
             if not position or len(position) != 2:
                 return {"success": False, "message": "position [x, y] is required"}
-            if justify not in ("left", "center", "right"):
-                return {"success": False, "message": "justify must be left, center, or right"}
+            try:
+                parse_justify(justify)
+            except ValueError as e:
+                return {"success": False, "message": str(e)}
             if font_size <= 0:
                 return {"success": False, "message": "fontSize must be positive"}
 
@@ -2661,6 +2664,137 @@ class SchematicHandlersMixin:
             logger.error(f"Error adding schematic text: {e}")
             import traceback
 
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_edit_schematic_text(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Change the content, position, angle or style of a free-form text annotation."""
+        logger.info("Editing schematic text annotation")
+        try:
+            from commands.schematic_items import edit_text
+
+            schematic_path = params.get("schematicPath")
+            position = params.get("position")
+            font_size = params.get("fontSize")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if position is not None and len(position) != 2:
+                return {"success": False, "message": "position must be [x, y]"}
+            if font_size is not None and font_size <= 0:
+                return {"success": False, "message": "fontSize must be positive"}
+            changes = {
+                k: params[k]
+                for k in ("text", "position", "angle", "fontSize", "bold", "italic", "justify")
+                if params.get(k) is not None
+            }
+            if not changes:
+                return {"success": False, "message": "Nothing to change"}
+            if params.get("text") == "":
+                return {"success": False, "message": "text must not be empty"}
+            if "justify" in changes:
+                parse_justify(changes["justify"])
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            item = edit_text(
+                sch_file,
+                uid=params.get("uuid"),
+                match=params.get("match"),
+                text=params.get("text"),
+                position=position,
+                angle=params.get("angle"),
+                font_size=font_size,
+                bold=params.get("bold"),
+                italic=params.get("italic"),
+                justify=params.get("justify"),
+            )
+            return {
+                "success": True,
+                "message": f"Edited text {item['uuid']}: {', '.join(changes)}",
+                "item": item,
+            }
+
+        except ValueError as e:
+            return {"success": False, "message": str(e)}
+        except Exception as e:
+            logger.error(f"Error editing schematic text: {e}")
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_delete_schematic_text(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove a free-form text annotation, found by uuid or by its content."""
+        logger.info("Deleting schematic text annotation")
+        try:
+            from commands.schematic_items import delete_text
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            item = delete_text(sch_file, uid=params.get("uuid"), match=params.get("match"))
+            return {
+                "success": True,
+                "message": f"Deleted text '{item['text']}' ({item['uuid']})",
+                "item": item,
+            }
+
+        except ValueError as e:
+            return {"success": False, "message": str(e)}
+        except Exception as e:
+            logger.error(f"Error deleting schematic text: {e}")
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_delete_schematic_no_connect(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove the no-connect flag at a position or on a component pin."""
+        logger.info("Deleting no-connect flag from schematic")
+        try:
+            from commands.pin_locator import PinLocator
+            from commands.schematic_items import delete_items_at
+
+            schematic_path = params.get("schematicPath")
+            position = params.get("position")
+            component_ref = params.get("componentRef")
+            pin_number = params.get("pinNumber")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            if component_ref and pin_number is not None:
+                position = PinLocator().get_pin_location(sch_file, component_ref, str(pin_number))
+                if position is None:
+                    return {
+                        "success": False,
+                        "message": f"Could not locate pin {pin_number} on {component_ref}",
+                    }
+            elif position is None or len(position) != 2:
+                return {
+                    "success": False,
+                    "message": "Provide either position [x, y] or componentRef + pinNumber",
+                }
+
+            removed = delete_items_at(sch_file, "no_connect", position)
+            if not removed:
+                return {
+                    "success": False,
+                    "message": f"No no-connect flag at ({position[0]}, {position[1]})",
+                }
+            return {
+                "success": True,
+                "message": f"Removed {removed} no-connect flag(s) at ({position[0]}, {position[1]})",
+                "removed": removed,
+                "position": {"x": position[0], "y": position[1]},
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting no-connect: {e}")
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 

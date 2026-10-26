@@ -127,7 +127,7 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "schematic",
     description:
-      "Schematic operations: create, inspect, add/edit/delete components and their properties, wire connections, net labels, netlists, annotation, ERC",
+      "Schematic operations: create, inspect, add/edit/delete components and their properties, wire connections, no-connects, net labels, text notes, netlists, annotation, ERC",
     tools: [
       "create_schematic",
       "add_schematic_component",
@@ -167,6 +167,9 @@ export const toolCategories: ToolCategory[] = [
       "get_net_at_point",
       "get_schematic_view_region",
       "run_erc",
+      "edit_schematic_text",
+      "delete_schematic_text",
+      "delete_schematic_no_connect",
     ],
   },
   {

@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 import sexpdata
+from commands.schematic_items import justify_tokens, parse_justify
 from sexpdata import Symbol
+from utils.file_io import read_text_preserve_newline, write_text_atomic
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string
 
@@ -62,8 +64,7 @@ def _find_insertion_point(content: str) -> int:
 
 def _text_insert(file_path: Path, sexp_text: str) -> bool:
     """Insert S-expression text into a .kicad_sch file preserving formatting."""
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    content, newline = read_text_preserve_newline(file_path)
 
     insert_at = _find_insertion_point(content)
     # _find_insertion_point returns a raw character offset; on files where
@@ -78,8 +79,7 @@ def _text_insert(file_path: Path, sexp_text: str) -> bool:
         insert_at = line_start
     content = content[:insert_at] + sexp_text + content[insert_at:]
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    write_text_atomic(file_path, content, newline)
     return True
 
 
@@ -1008,7 +1008,8 @@ class WireManager:
         """Return all free-form text annotations (SCH_TEXT) in a schematic.
 
         Each entry is a dict with keys: text, position (x/y), angle,
-        font_size, bold, italic, justify, uuid.
+        font_size, bold, italic, justify (horizontal), vertical_justify, uuid.
+        A centered axis reads "center": KiCad writes no keyword for it.
         Returns None on parse error.
         """
         try:
@@ -1033,7 +1034,7 @@ class WireManager:
                 pos_x = pos_y = angle = 0.0
                 font_size = 1.27
                 bold = italic = False
-                justify = "left"
+                justify = vertical_justify = "center"
                 uid = ""
 
                 for part in item[2:]:
@@ -1060,8 +1061,12 @@ class WireManager:
                                         bold = str(fp[1]).lower() == "yes"
                                     elif fp[0] == _SYM_ITALIC and len(fp) >= 2:
                                         italic = str(fp[1]).lower() == "yes"
-                            elif eff[0] == _SYM_JUSTIFY and len(eff) >= 2:
-                                justify = str(eff[1])
+                            elif eff[0] == _SYM_JUSTIFY:
+                                for tok in map(str, eff[1:]):
+                                    if tok in ("left", "right"):
+                                        justify = tok
+                                    elif tok in ("top", "bottom"):
+                                        vertical_justify = tok
 
                 results.append(
                     {
@@ -1072,6 +1077,7 @@ class WireManager:
                         "bold": bold,
                         "italic": italic,
                         "justify": justify,
+                        "vertical_justify": vertical_justify,
                         "uuid": uid,
                     }
                 )
@@ -1094,8 +1100,16 @@ class WireManager:
         italic: bool = False,
         justify: str = "left",
     ) -> bool:
-        """Add a free-form text annotation (SCH_TEXT) to a KiCad schematic."""
+        """Add a free-form text annotation (SCH_TEXT) to a KiCad schematic.
+
+        *justify* is left/center/right, optionally followed by top or bottom.
+        Without a vertical part, multi-line text hangs from its anchor (top) so
+        it grows downward, and a single line sits on it (bottom).
+        """
         try:
+            h, v = parse_justify(justify)
+            tokens = justify_tokens(h or "left", v or ("top" if "\n" in text else "bottom"))
+            justify_line = f"\t\t\t(justify {tokens})\n" if tokens else ""
             # KiCad's parser rejects raw newlines inside quoted string literals;
             # the shared helper escapes them with backslashes and quotes.
             text_escaped = escape_sexpr_string(text)
@@ -1112,7 +1126,7 @@ class WireManager:
                 f"\t\t(effects\n"
                 f"\t\t\t(font{font_attrs}\n"
                 f"\t\t\t)\n"
-                f"\t\t\t(justify {justify} bottom)\n"
+                f"{justify_line}"
                 f"\t\t)\n"
                 f'\t\t(uuid "{uid}")\n'
                 f"\t)\n"

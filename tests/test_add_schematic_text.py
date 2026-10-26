@@ -112,7 +112,52 @@ class TestWireManagerAddText:
         WireManager.add_text(sch, "Centered", [50.0, 50.0], justify="center")
 
         content = sch.read_text(encoding="utf-8")
-        assert "(justify center bottom)" in content
+        # KiCad 10 fails to load a schematic with (justify center ...); it
+        # writes a centered axis as no keyword at all.
+        assert "(justify bottom)" in content
+        assert "center" not in content
+
+    def test_vertical_justification(self, tmp_path):
+        from commands.wire_manager import WireManager
+
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_MINIMAL_SCH, encoding="utf-8")
+
+        WireManager.add_text(sch, "Hanging", [50.0, 50.0], justify="right top")
+
+        assert "(justify right top)" in sch.read_text(encoding="utf-8")
+
+    def test_multiline_defaults_to_top(self, tmp_path):
+        from commands.wire_manager import WireManager
+
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_MINIMAL_SCH, encoding="utf-8")
+
+        WireManager.add_text(sch, "line one\nline two", [50.0, 50.0])
+
+        assert "(justify left top)" in sch.read_text(encoding="utf-8")
+
+    def test_single_line_defaults_to_bottom(self, tmp_path):
+        from commands.wire_manager import WireManager
+
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_MINIMAL_SCH, encoding="utf-8")
+
+        WireManager.add_text(sch, "one line", [50.0, 50.0])
+
+        assert "(justify left bottom)" in sch.read_text(encoding="utf-8")
+
+    def test_keeps_crlf_line_endings(self, tmp_path):
+        from commands.wire_manager import WireManager
+
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_bytes(_MINIMAL_SCH.replace("\n", "\r\n").encode("utf-8"))
+
+        WireManager.add_text(sch, "Note", [10.0, 10.0])
+
+        raw = sch.read_bytes()
+        assert b'(text "Note"' in raw
+        assert raw.count(b"\n") == raw.count(b"\r\n")
 
     def test_custom_font_size(self, tmp_path):
         from commands.wire_manager import WireManager
@@ -229,7 +274,7 @@ class TestHandleAddSchematicText:
                 "schematicPath": str(sch),
                 "text": "Note",
                 "position": [10.0, 20.0],
-                "justify": "top",
+                "justify": "left middle",
             }
         )
         assert result["success"] is False

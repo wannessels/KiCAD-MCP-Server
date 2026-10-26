@@ -1,0 +1,272 @@
+"""Text-level edits of top-level items in a .kicad_sch file.
+
+Items are found structurally and edited in place: the rest of the file keeps
+its bytes, and an edited item keeps its uuid and every child the edit does not
+name. Line endings are kept as found.
+"""
+
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from utils.file_io import read_text_preserve_newline, write_text_atomic
+from utils.sexpr_format import (
+    QUOTED_VALUE,
+    escape_sexpr_string,
+    iter_child_offsets,
+    match_paren,
+    unescape_sexpr_string,
+)
+
+_H_JUSTIFY = ("left", "center", "right")
+_V_JUSTIFY = ("top", "bottom")
+_TOLERANCE = 0.5
+
+
+def fmt(v: float) -> str:
+    """Format a number the way KiCad writes it (no trailing zeros)."""
+    s = f"{float(v):.4f}".rstrip("0").rstrip(".")
+    return s if s not in ("", "-0") else "0"
+
+
+def _head_pattern(head: str) -> "re.Pattern[str]":
+    return re.compile(r"\(" + re.escape(head) + r"[\s)]")
+
+
+def top_level_items(content: str, head: str) -> List[Tuple[int, int]]:
+    """(start, end) of every direct child of the root list whose head is *head*."""
+    pattern = _head_pattern(head)
+    return [
+        (off, match_paren(content, off))
+        for off in iter_child_offsets(content)
+        if pattern.match(content, off)
+    ]
+
+
+def child_span(block: str, head: str) -> Tuple[int, int]:
+    """(start, end) of the first direct child of *block* whose head is *head*, or (-1, -1)."""
+    pattern = _head_pattern(head)
+    for off in iter_child_offsets(block):
+        if pattern.match(block, off):
+            return off, match_paren(block, off)
+    return -1, -1
+
+
+def remove_span(text: str, start: int, end: int) -> str:
+    """Cut text[start:end + 1] together with the whitespace that leads up to it."""
+    lead = start
+    while lead > 0 and text[lead - 1] in " \t\r\n":
+        lead -= 1
+    return text[:lead] + text[end + 1 :]
+
+
+def insert_child(block: str, node: str, after: Optional[str] = None) -> str:
+    """Append *node* to *block* (or put it right after the child *after*), laid out like
+    the block's own children: on its own line when the block spans lines."""
+    close = len(block) - 1
+    ws = close
+    while ws > 0 and block[ws - 1] in " \t\r\n":
+        ws -= 1
+    trailing = block[ws:close]
+    sep = "\n" + trailing.rsplit("\n", 1)[1] + "\t" if "\n" in trailing else " "
+    at = ws
+    if after is not None:
+        _, after_end = child_span(block, after)
+        if after_end >= 0:
+            at = after_end + 1
+    return block[:at] + sep + node + block[at:]
+
+
+def set_child(block: str, head: str, node: str, after: Optional[str] = None) -> str:
+    """Replace the child *head* with *node*, or insert it when there is none."""
+    s, e = child_span(block, head)
+    if s < 0:
+        return insert_child(block, node, after)
+    return block[:s] + node + block[e + 1 :]
+
+
+def remove_child(block: str, head: str) -> str:
+    s, e = child_span(block, head)
+    return block if s < 0 else remove_span(block, s, e)
+
+
+def edit_child(block: str, head: str, fn) -> str:
+    """Apply *fn* to the text of the child *head*; the block is unchanged when it has none."""
+    s, e = child_span(block, head)
+    if s < 0:
+        return block
+    return block[:s] + fn(block[s : e + 1]) + block[e + 1 :]
+
+
+def _at(block: str) -> Optional[List[float]]:
+    s, e = child_span(block, "at")
+    if s < 0:
+        return None
+    return [float(t) for t in block[s + 1 : e].split()[1:]]
+
+
+def _near(a: List[float], b: List[float]) -> bool:
+    return abs(a[0] - b[0]) < _TOLERANCE and abs(a[1] - b[1]) < _TOLERANCE
+
+
+def _uuid(block: str) -> str:
+    s, e = child_span(block, "uuid")
+    return block[s + 1 : e].split()[1].strip('"') if s >= 0 else ""
+
+
+def parse_justify(spec: str) -> Tuple[Optional[str], Optional[str]]:
+    """Split "left top", "right", "bottom", ... into (horizontal, vertical); None = not given."""
+    h = v = None
+    for tok in spec.split():
+        if tok in _H_JUSTIFY and h is None:
+            h = tok
+        elif tok in _V_JUSTIFY and v is None:
+            v = tok
+        else:
+            raise ValueError(
+                f"justify '{spec}' is not valid: use one of left/center/right, "
+                "optionally followed by top or bottom (e.g. 'left top')"
+            )
+    if h is None and v is None:
+        raise ValueError("justify must not be empty")
+    return h, v
+
+
+def justify_tokens(h: str, v: str) -> str:
+    """The (justify ...) contents KiCad writes; it leaves out a centered axis, and its
+    parser rejects the keyword "center" (the schematic then fails to load)."""
+    return " ".join(t for t in (h, v) if t != "center")
+
+
+def _current_justify(effects: str) -> Tuple[str, str]:
+    s, e = child_span(effects, "justify")
+    toks = effects[s + 1 : e].split()[1:] if s >= 0 else []
+    h = next((t for t in toks if t in ("left", "right")), "center")
+    v = next((t for t in toks if t in _V_JUSTIFY), "center")
+    return h, v
+
+
+def _set_justify(effects: str, h: str, v: str) -> str:
+    tokens = justify_tokens(h, v)
+    if not tokens:
+        return remove_child(effects, "justify")
+    return set_child(effects, "justify", f"(justify {tokens})", after="font")
+
+
+def _text_info(block: str) -> Dict[str, Any]:
+    m = re.match(r"\(text\s+" + QUOTED_VALUE, block)
+    at = _at(block) or [0.0, 0.0]
+    return {
+        "text": unescape_sexpr_string(m.group(1)) if m else "",
+        "uuid": _uuid(block),
+        "position": {"x": at[0], "y": at[1]},
+    }
+
+
+def _select_text(content: str, uid: Optional[str], match: Optional[str]) -> Tuple[int, int]:
+    items = [(s, e, _text_info(content[s : e + 1])) for s, e in top_level_items(content, "text")]
+    if uid:
+        hits = [i for i in items if i[2]["uuid"] == uid]
+        what = f"uuid {uid}"
+    elif match:
+        hits = [i for i in items if i[2]["text"] == match] or [
+            i for i in items if match.lower() in i[2]["text"].lower()
+        ]
+        what = f"'{match}'"
+    else:
+        raise ValueError("uuid or match is required")
+    if not hits:
+        raise ValueError(f"No text item matches {what}")
+    if len(hits) > 1:
+        listing = "; ".join(
+            f"{i[2]['uuid']} '{i[2]['text']}' at ({i[2]['position']['x']}, "
+            f"{i[2]['position']['y']})"
+            for i in hits
+        )
+        raise ValueError(f"{len(hits)} text items match {what}: {listing}. Pass uuid to pick one.")
+    return hits[0][0], hits[0][1]
+
+
+def _set_flag(font: str, head: str, on: bool) -> str:
+    return set_child(font, head, f"({head} yes)") if on else remove_child(font, head)
+
+
+def edit_text(
+    path: Path,
+    uid: Optional[str] = None,
+    match: Optional[str] = None,
+    text: Optional[str] = None,
+    position: Optional[List[float]] = None,
+    angle: Optional[float] = None,
+    font_size: Optional[float] = None,
+    bold: Optional[bool] = None,
+    italic: Optional[bool] = None,
+    justify: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Change the named attributes of one (text ...) item; returns its info after the edit."""
+    content, newline = read_text_preserve_newline(path)
+    s, e = _select_text(content, uid, match)
+    block = content[s : e + 1]
+
+    if text is not None:
+        m = re.match(r"\(text\s+" + QUOTED_VALUE, block)
+        block = block[: m.start(1)] + escape_sexpr_string(text) + block[m.end(1) :]
+    if position is not None or angle is not None:
+        x, y, *rest = _at(block) or [0.0, 0.0]
+        if position is not None:
+            x, y = position
+        a = angle if angle is not None else (rest[0] if rest else 0)
+        block = set_child(block, "at", f"(at {fmt(x)} {fmt(y)} {fmt(a)})")
+    if font_size is not None:
+        size = f"(size {fmt(font_size)} {fmt(font_size)})"
+        block = edit_child(
+            block,
+            "effects",
+            lambda ef: edit_child(ef, "font", lambda f: set_child(f, "size", size)),
+        )
+    for head, on in (("bold", bold), ("italic", italic)):
+        if on is not None:
+            block = edit_child(
+                block,
+                "effects",
+                lambda ef, head=head, on=on: edit_child(
+                    ef, "font", lambda f: _set_flag(f, head, on)
+                ),
+            )
+    if justify is not None:
+        h, v = parse_justify(justify)
+
+        def _apply(ef: str) -> str:
+            h0, v0 = _current_justify(ef)
+            return _set_justify(ef, h or h0, v or v0)
+
+        block = edit_child(block, "effects", _apply)
+
+    content = content[:s] + block + content[e + 1 :]
+    write_text_atomic(path, content, newline)
+    return _text_info(block)
+
+
+def delete_text(path: Path, uid: Optional[str] = None, match: Optional[str] = None) -> Dict:
+    """Remove one (text ...) item; returns the info of the removed item."""
+    content, newline = read_text_preserve_newline(path)
+    s, e = _select_text(content, uid, match)
+    info = _text_info(content[s : e + 1])
+    write_text_atomic(path, remove_span(content, s, e), newline)
+    return info
+
+
+def delete_items_at(path: Path, head: str, position: List[float]) -> int:
+    """Remove every top-level *head* item (e.g. no_connect) at *position*;
+    returns how many were removed."""
+    content, newline = read_text_preserve_newline(path)
+    spans = [
+        (s, e)
+        for s, e in top_level_items(content, head)
+        if _near(_at(content[s : e + 1]) or [float("inf")] * 2, position)
+    ]
+    for s, e in reversed(spans):
+        content = remove_span(content, s, e)
+    if spans:
+        write_text_atomic(path, content, newline)
+    return len(spans)

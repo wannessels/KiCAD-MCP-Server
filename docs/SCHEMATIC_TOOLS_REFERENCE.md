@@ -183,7 +183,7 @@ Assign reference designators to unannotated components (R? → R1, R2, ...). Mus
 | ------------- | ------ | -------- | --------------------------- |
 | schematicPath | string | Yes      | Path to the .kicad_sch file |
 
-## Wiring and Connections (9 tools)
+## Wiring and Connections (10 tools)
 
 ### add_schematic_wire
 
@@ -224,6 +224,20 @@ match the pin endpoint exactly.
 | schematicPath | string          | Yes      | Path to the schematic file                                           |
 | componentRef  | string          | No       | Component reference to snap to (e.g., U1). Use with `pinNumber`.     |
 | pinNumber     | string / number | No       | Pin to mark as not connected. Use with `componentRef`.               |
+| position      | array           | No       | `[x, y]` in mm. Required when `componentRef`/`pinNumber` are absent. |
+
+### delete_schematic_no_connect
+
+Remove the no-connect flag on a pin, e.g. before wiring a pin that was marked
+unused. Takes the same `componentRef` + `pinNumber` or `position` as
+`add_no_connect`; every flag within 0.5 mm of the point is removed, so stacked
+duplicates go too.
+
+| Parameter     | Type            | Required | Description                                                          |
+| ------------- | --------------- | -------- | -------------------------------------------------------------------- |
+| schematicPath | string          | Yes      | Path to the schematic file                                           |
+| componentRef  | string          | No       | Component reference (e.g., U1). Use with `pinNumber`.                |
+| pinNumber     | string / number | No       | Pin whose flag to remove. Use with `componentRef`.                   |
 | position      | array           | No       | `[x, y]` in mm. Required when `componentRef`/`pinNumber` are absent. |
 
 ### add_schematic_net_label
@@ -378,7 +392,7 @@ Checks net label / power symbol positions first (exact IU match), then wire endp
 | position | `{"x": float, "y": float}` — echoes the query coordinates               |
 | source   | `"net_label"` \| `"wire_endpoint"` \| `null` — how the net was resolved |
 
-## Text Annotations (2 tools)
+## Text Annotations (4 tools)
 
 ### add_schematic_text
 
@@ -393,7 +407,46 @@ Add a free-form text annotation (note, heading, documentation string) directly o
 | fontSize      | number       | No       | Font size in mm (default: 1.27 — KiCad standard) |
 | bold          | boolean      | No       | Bold text (default: false)                       |
 | italic        | boolean      | No       | Italic text (default: false)                     |
-| justify       | string       | No       | `left` \| `center` \| `right` (default: `left`)  |
+| justify       | string       | No       | See below (default: `left`)                      |
+
+`justify` is `left`, `center` or `right`, optionally followed by `top` or
+`bottom`, e.g. `left top`. Without a vertical part, multi-line text is `top`,
+so a note grows downward from its anchor, and a single line is `bottom`.
+
+### edit_schematic_text
+
+Change a text annotation in place. Find it by `uuid` (from
+`list_schematic_texts`) or by `match`: an exact match on the text wins,
+otherwise a case-insensitive substring; more than one hit is an error that
+lists the candidates. Only the attributes given change; the uuid and every
+other part of the item (colour, font face, ...) are kept.
+
+| Parameter     | Type         | Required | Description                                                   |
+| ------------- | ------------ | -------- | ------------------------------------------------------------- |
+| schematicPath | string       | Yes      | Path to the .kicad_sch file                                   |
+| uuid          | string       | No\*     | uuid of the text item                                         |
+| match         | string       | No\*     | Text content to find the item by                              |
+| text          | string       | No       | New content; line breaks are allowed                          |
+| position      | array [x, y] | No       | New position in mm                                            |
+| angle         | number       | No       | New rotation in degrees                                       |
+| fontSize      | number       | No       | New font size in mm                                           |
+| bold          | boolean      | No       | Bold on or off                                                |
+| italic        | boolean      | No       | Italic on or off                                              |
+| justify       | string       | No       | As for `add_schematic_text`; `top` alone keeps the left/right |
+
+\* One of `uuid` or `match` is required.
+
+### delete_schematic_text
+
+Delete a text annotation, found by `uuid` or `match` as for `edit_schematic_text`.
+
+| Parameter     | Type   | Required | Description                      |
+| ------------- | ------ | -------- | -------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch file      |
+| uuid          | string | No\*     | uuid of the text item            |
+| match         | string | No\*     | Text content to find the item by |
+
+\* One of `uuid` or `match` is required.
 
 ### list_schematic_texts
 
@@ -406,16 +459,17 @@ List all free-form text annotations in the schematic. Optionally filter by a sub
 
 **Response fields (per text entry):**
 
-| Field     | Description                         |
-| --------- | ----------------------------------- |
-| text      | Text string content                 |
-| position  | `{"x": float, "y": float}` in mm    |
-| angle     | Rotation angle in degrees           |
-| font_size | Font size in mm                     |
-| bold      | `true` / `false`                    |
-| italic    | `true` / `false`                    |
-| justify   | `"left"` \| `"center"` \| `"right"` |
-| uuid      | KiCad UUID of the element           |
+| Field            | Description                         |
+| ---------------- | ----------------------------------- |
+| text             | Text string content                 |
+| position         | `{"x": float, "y": float}` in mm    |
+| angle            | Rotation angle in degrees           |
+| font_size        | Font size in mm                     |
+| bold             | `true` / `false`                    |
+| italic           | `true` / `false`                    |
+| justify          | `"left"` \| `"center"` \| `"right"` |
+| vertical_justify | `"top"` \| `"center"` \| `"bottom"` |
+| uuid             | KiCad UUID of the element           |
 
 ## Schematic Creation and Export (6 tools)
 
@@ -645,7 +699,7 @@ These live in other reference documents but belong to the same workflow:
 Paths are relative to the repository root.
 
 - **TypeScript (tool definitions):**
-  - `src/tools/schematic.ts` - the 46 core schematic tools
+  - `src/tools/schematic.ts` - the 49 core schematic tools
   - `src/tools/schematic-batch.ts` - bulk add, edit, connect
   - `src/tools/schematic-hierarchy.ts` - hierarchical sheets
   - `src/tools/schematic-layout.ts` - field placement and cosmetic lint
@@ -655,6 +709,7 @@ Paths are relative to the repository root.
   - `python/commands/component_schematic.py` - ComponentManager (add, delete, edit, list components with dynamic symbol loading)
   - `python/commands/connection_schematic.py` - ConnectionManager (wiring, net labels, passthrough, netlist generation)
   - `python/commands/wire_manager.py` - WireManager (low-level wire manipulation)
+  - `python/commands/schematic_items.py` - in-place edits of text notes and no-connects
   - `python/commands/pin_locator.py` - PinLocator (pin location lookup and angle calculation)
   - `python/commands/dynamic_symbol_loader.py` - DynamicSymbolLoader (runtime symbol loading from KiCad libraries)
   - `python/commands/backannotate_footprints.py` - footprint back-annotation from board to schematic

@@ -755,6 +755,9 @@ class KiCADInterface(SchematicHandlersMixin):
             "add_schematic_hierarchical_label": self._handle_add_schematic_hierarchical_label,
             "add_schematic_text": self._handle_add_schematic_text,
             "list_schematic_texts": self._handle_list_schematic_texts,
+            "edit_schematic_text": self._handle_edit_schematic_text,
+            "delete_schematic_text": self._handle_delete_schematic_text,
+            "delete_schematic_no_connect": self._handle_delete_schematic_no_connect,
             "add_sheet_pin": self._handle_add_sheet_pin,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands

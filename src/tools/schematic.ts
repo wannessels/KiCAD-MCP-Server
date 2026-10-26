@@ -5,6 +5,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+function reply(result: any, failure: string, ok: string = result.message) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: result.success ? ok : `${failure}: ${result.message || "Unknown error"}`,
+      },
+    ],
+    ...(result.success ? {} : { isError: true }),
+  };
+}
+
 export function registerSchematicTools(server: McpServer, callKicadScript: Function) {
   // Create schematic tool
   server.tool(
@@ -719,6 +731,38 @@ edit_schematic_component and set its value to an empty string.`,
           ],
         };
       }
+    },
+  );
+
+  // Delete no-connect flag
+  server.tool(
+    "delete_schematic_no_connect",
+    "Remove a no-connect flag (X marker), e.g. before wiring a pin that was marked unused. " +
+      "Supply componentRef + pinNumber to target the flag on that pin, or position [x, y] in mm.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      position: z
+        .array(z.number())
+        .length(2)
+        .optional()
+        .describe("Position [x, y] in mm. Required when componentRef/pinNumber are not given."),
+      componentRef: z
+        .string()
+        .optional()
+        .describe("Component reference (e.g. U1, R1). Use with pinNumber."),
+      pinNumber: z
+        .union([z.string(), z.number()])
+        .optional()
+        .describe("Pin number or name on componentRef (e.g. '1', 'GND'). Use with componentRef."),
+    },
+    async (args: {
+      schematicPath: string;
+      position?: number[];
+      componentRef?: string;
+      pinNumber?: string | number;
+    }) => {
+      const result = await callKicadScript("delete_schematic_no_connect", args);
+      return reply(result, "Failed to delete no-connect");
     },
   );
 
@@ -2176,7 +2220,8 @@ edit_schematic_component and set its value to an empty string.`,
             ` size=${t.font_size}` +
             (t.bold ? " bold" : "") +
             (t.italic ? " italic" : "") +
-            ` justify=${t.justify}`,
+            ` justify=${t.justify} ${t.vertical_justify}` +
+            ` uuid=${t.uuid}`,
         );
         return {
           content: [
@@ -2218,9 +2263,13 @@ edit_schematic_component and set its value to an empty string.`,
       bold: z.boolean().optional().describe("Bold text (default: false)"),
       italic: z.boolean().optional().describe("Italic text (default: false)"),
       justify: z
-        .enum(["left", "center", "right"])
+        .string()
         .optional()
-        .describe("Horizontal text justification (default: left)"),
+        .describe(
+          "left, center or right, optionally followed by top or bottom (e.g. 'left top'). " +
+            "Default: left; vertically top for multi-line text, so a note grows downward " +
+            "from its anchor, and bottom for a single line.",
+        ),
     },
     async (args: {
       schematicPath: string;
@@ -2230,7 +2279,7 @@ edit_schematic_component and set its value to an empty string.`,
       fontSize?: number;
       bold?: boolean;
       italic?: boolean;
-      justify?: "left" | "center" | "right";
+      justify?: string;
     }) => {
       const result = await callKicadScript("add_schematic_text", args);
       if (result.success) {
@@ -2252,6 +2301,64 @@ edit_schematic_component and set its value to an empty string.`,
           ],
         };
       }
+    },
+  );
+
+  const textLookup = {
+    uuid: z.string().optional().describe("uuid of the text item (from list_schematic_texts)"),
+    match: z
+      .string()
+      .optional()
+      .describe(
+        "Text content to find the item by: an exact match wins, otherwise a case-insensitive " +
+          "substring. Fails when more than one item matches; pass uuid then.",
+      ),
+  };
+
+  // Edit free-form text annotation
+  server.tool(
+    "edit_schematic_text",
+    "Edit a free-form text annotation in place: content, position, angle, font size, bold, " +
+      "italic or justification. Find it by uuid or by its text (match). Only the attributes " +
+      "given change; the uuid and everything else are kept.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      ...textLookup,
+      text: z.string().optional().describe("New text content (may contain line breaks)"),
+      position: z
+        .array(z.number())
+        .length(2)
+        .optional()
+        .describe("New position [x, y] in schematic mm coordinates"),
+      angle: z.number().optional().describe("New rotation angle in degrees"),
+      fontSize: z.number().optional().describe("New font size in mm"),
+      bold: z.boolean().optional().describe("Bold on or off"),
+      italic: z.boolean().optional().describe("Italic on or off"),
+      justify: z
+        .string()
+        .optional()
+        .describe(
+          "left, center or right and/or top or bottom (e.g. 'left top', or 'top' to change " +
+            "only the vertical part)",
+        ),
+    },
+    async (args: Record<string, unknown>) => {
+      const result = await callKicadScript("edit_schematic_text", args);
+      return reply(result, "Failed to edit text annotation", JSON.stringify(result, null, 2));
+    },
+  );
+
+  // Delete free-form text annotation
+  server.tool(
+    "delete_schematic_text",
+    "Delete a free-form text annotation, found by uuid or by its text (match).",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      ...textLookup,
+    },
+    async (args: { schematicPath: string; uuid?: string; match?: string }) => {
+      const result = await callKicadScript("delete_schematic_text", args);
+      return reply(result, "Failed to delete text annotation");
     },
   );
 
